@@ -8,6 +8,9 @@ import Network.OAuth2.Util
 import Resources
 import Data.List.Split
 import System.IO
+import System.FilePath
+import Util
+import Data.List
 
 getSavedTracks :: Flow ()
 getSavedTracks = do
@@ -33,6 +36,25 @@ addTracks playlistId trackIds = do
       url chunk currentUser = baseUrl ++ userId currentUser ++ "/playlists/"
       	     	 	       ++ playlistId ++ "/tracks?uris=" ++ chunk
 
+replacePlaylistTracks :: String -> [String] -> Flow ()
+replacePlaylistTracks playlistUri trackUris = do
+  currentUser <- getCurrentUser
+  let playlistOwner = extractUserName playlistUri
+
+  if userId currentUser == playlistOwner
+  then do
+    let urls = map (\x -> url x currentUser) $ map uriChunk chunks
+    results <- mapM (\url -> authRequest' url "PUT") urls
+    liftIO $ mapM_ (putStrLn . show) results
+  else return ()
+    where
+      chunks = chunksOf 100 trackUris
+      uriChunk ids = foldr (\x y -> x ++ "," ++ y) "" (init ids) ++ last ids
+      baseUrl = "https://api.spotify.com/v1/users/"
+      playlistId = extractId playlistUri
+      url chunk currentUser = baseUrl ++ userId currentUser ++ "/playlists/"
+                                 ++ playlistId ++ "/tracks?uris=" ++ chunk
+
 getTracks :: String -> Flow [PlaylistTrackObject]
 getTracks href = do
   liftIO $ putStrLn "fetching objects!"
@@ -40,19 +62,43 @@ getTracks href = do
   liftIO $ putStrLn "Done fetching objects!"
   return $ items pages
 
-getAllTracks :: [(String, String)] -> Flow ()
-getAllTracks [] = return ()
-getAllTracks ((path, href):playlists) = do
+writePlaylists :: [(String,SimplifiedPlaylistObject)] -> Flow ()
+writePlaylists [] = return ()
+writePlaylists ((path, playlist):playlists) = do
+  let href = trackObjectHref $ tracks playlist
   tracks <- getTracks href
-
---   liftIO $ putStrLn "-----------Playlist start-----------"
---   liftIO $ putStrLn $ "Playlist name: " ++ name
---   liftIO $ mapM_ (putStrLn . show . track) tracks -- putStrLn $ show $ track tracks
---   liftIO $ putStrLn "------------Playlist end------------"
   liftIO (do
   	     putStrLn $ "Writing to " ++ path
 	     withFile path WriteMode (\handle -> do
 	     	      	   mapM_ ((hPutStrLn handle) . trackUri . track) tracks)
          )
 
-  getAllTracks playlists
+  writePlaylists playlists
+
+readPlaylists :: [(FilePath, SimplifiedPlaylistObject)] -> Flow ()
+readPlaylists [] = return ()
+readPlaylists ((path, playlist):playlists) = do
+  trackUris <- liftIO $ getURIs path
+  let (locals, remotes) = partition (isInfixOf "local") trackUris
+  liftIO $ putStrLn $ simplifiedName playlist
+  liftIO $ putStrLn "For now you will have to manually add these local tracks"
+  liftIO $ mapM_ (putStrLn) locals
+
+  replacePlaylistTracks (playlistUri playlist) remotes
+  readPlaylists playlists
+  
+getSources :: FilePath -> ([(FilePath, SimplifiedPlaylistObject)] -> Flow ()) ->Flow Int
+getSources path playlistAction = do
+      getTokens
+
+      uris <- liftIO $ getURIs path
+      let dir = takeDirectory path
+
+      playlists <- getPlaylists
+      let desired = filter (\x -> playlistUri x `elem` uris) playlists
+
+      -- let hrefs = map (\x -> (dir ++ "/" ++ simplifiedName x ++ ".txt", trackObjectHref $ tracks x)) desired
+      -- playlistAction hrefs
+      playlistAction $ map (\x -> (dir ++ "/" ++ simplifiedName x ++ ".txt", x)) desired
+      
+      return 0

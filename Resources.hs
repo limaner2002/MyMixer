@@ -198,10 +198,6 @@ data FullPlaylistObject = FullPlaylistObject
 
 instance FromJSON FullPlaylistObject
   where
---     parseJSON value = do
---       withObject "FullPlaylistObject" (\obj -> FullPlaylistObject <$>
---       	    (parseJSON value :: Parser SimplifiedPlaylistObject) <*>
--- 	    obj .: "snapshot_id") value
     parseJSON (Object o) = FullPlaylistObject <$>
     	      	      	     o .: "name" <*>
 			     o .: "uri" <*>
@@ -237,16 +233,3 @@ instance FromJSON PlaylistTrackObject
 			     o .: "track"
     parseJSON _ = mzero
 
-fetchSeveral :: (FromJSON a, Monoid a) => [String] -> Flow (a)
-fetchSeveral [] = return mempty
-fetchSeveral (url:urls) = do
-   page <- fromAuthUrl url
-   next <- fetchSeveral urls
-   return $ page `mappend` next
-
-fetchPagingObjects :: (FromJSON a) => Maybe String -> Flow (PagingObject a)
-fetchPagingObjects Nothing = return mempty
-fetchPagingObjects (Just url) = do
-  page <- fromAuthUrl url
-  next <- fetchPagingObjects (next page)
-  return $ page `mappend` next
