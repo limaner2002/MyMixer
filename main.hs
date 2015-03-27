@@ -14,21 +14,21 @@ import Util
 tmpAdd :: FilePath -> Flow ()
 tmpAdd path = do
   ids <- liftIO $ getURIs path
-  addTracks "0Af5MOLY5avsx3nbF7grNs" ids
+  replacePlaylistTracks "0Af5MOLY5avsx3nbF7grNs" ids
 
-  let chunks = chunksOf 50 $ map extractId ids
-  let urls = map (\idChunk -> "https://api.spotify.com/v1/tracks/?ids=" ++ foldr (\x y -> x ++ "," ++ y) "" (init idChunk) ++ last idChunk) chunks
+  -- let chunks = chunksOf 50 $ map extractId ids
+  -- let urls = map (\idChunk -> "https://api.spotify.com/v1/tracks/?ids=" ++ foldr (\x y -> x ++ "," ++ y) "" (init idChunk) ++ last idChunk) chunks
 
-  tracks <- fetchSeveral urls :: Flow Tracks
+  -- tracks <- fetchSeveral urls :: Flow Tracks
 
-  liftIO $ putStrLn $ show tracks
+  -- liftIO $ putStrLn $ show tracks
 
 start :: FilePath -> Flow Int
 start path = do
       getTokens
       -- tmpAdd path
-      -- getSources path readPlaylists
-      getSources path writePlaylists
+      getSources path readPlaylists
+      -- getSources path writePlaylists
 
       return 0
 

@@ -44,7 +44,8 @@ replacePlaylistTracks playlistUri trackUris = do
   if userId currentUser == playlistOwner
   then do
     let urls = map (\x -> url x currentUser) $ map uriChunk chunks
-    results <- mapM (\url -> authRequest' url "PUT") urls
+    replaceResult <- authRequest' (head urls) "PUT"
+    results <- mapM (\url -> authRequest url) urls
     liftIO $ mapM_ (putStrLn . show) results
   else return ()
     where
