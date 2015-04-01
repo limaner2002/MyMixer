@@ -233,3 +233,8 @@ instance FromJSON PlaylistTrackObject
 			     o .: "track"
     parseJSON _ = mzero
 
+
+data SpotifyQuery = SpotifyQuery
+    { queryArtist :: String,
+      queryTrack :: String
+    }

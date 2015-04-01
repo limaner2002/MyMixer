@@ -17,6 +17,9 @@ import Data.Binary
 import Data.Char
 import System.Environment
 
+-- Make sure to remove this soon
+import HSPlayer
+
 type ID3Data = BS.ByteString
 
 data FrameHeader = FrameHeader
@@ -24,15 +27,19 @@ data FrameHeader = FrameHeader
       frameSize :: Word32,
       frameFlags :: ID3Data,
       val :: ID3Data
-    }
+    } | Unsupported ID3Data
 
 instance Show FrameHeader
     where
-      show (FrameHeader id size flags val) =
-          "frameId: " ++ C8.unpack id
-                      ++ " size: " ++ show size
-                      ++ " flags: " ++ (show $ BS.unpack flags)
-                      ++ " value: " ++ C8.unpack val
+      -- show (FrameHeader id size flags val) =
+      --     "frameId: " ++ C8.unpack id
+      --                 ++ " size: " ++ show size
+      --                 ++ " flags: " ++ (show $ BS.unpack flags)
+      --                 ++ " value: " ++ C8.unpack val
+      show (FrameHeader id _ _ value) =
+          C8.unpack id ++ " " ++ C8.unpack value
+      show (Unsupported name) =
+          C8.unpack name ++ " Unsupported"
 
 data TagHeader = TagHeader
     { tagType :: ID3Data,
@@ -59,7 +66,7 @@ instance Show TagHeader
           "tagType: " ++ C8.unpack tagType
                       ++ "v2." ++ (show $ BS.head major)
                       ++ "." ++ (show $ BS.head minor)
-                      ++ " flags: " ++ C8.unpack flags
+                      ++ " flags: " ++ show (BS.unpack flags)
                       ++ " size: " ++ show size
 
 getField :: (MonadResource m) => Int -> ConduitM C8.ByteString c m C8.ByteString
@@ -93,14 +100,22 @@ findFrameHeader = CM.map $ BS.dropWhile (\x -> isAscii (chr . fromEnum $ x) == F
 parseFrame :: (MonadResource m) => Consumer BS.ByteString m (Maybe FrameHeader)
 parseFrame = do
   frameId <- getField 4
-  frameSize <- getField 4
-  frameFlags <- getField 2
-  let size = unSyncField frameSize
-  val <- getField (fromEnum size)
+  if C8.unpack frameId == "PRIV"
+  then do
+    frameSize <- getField 4
+    CB.drop ((fromEnum (decode (BL.fromStrict frameSize) :: Word32))+2)
+    return $ Just $ Unsupported frameId
+  else do
+    if C8.all (\x -> (isAlpha x) || (isDigit x)) frameId
+    then do
+      frameSize <- getField 4
+      frameFlags <- getField 2
+      let size = unSyncField frameSize
+      val <- getField (fromEnum size)
 
-  if C8.all (\x -> (isAlpha x) || (isDigit x)) frameId
-  then return $ Just $ FrameHeader frameId size frameFlags val
-  else return Nothing
+      return $ Just $ FrameHeader frameId size frameFlags val
+    else return Nothing
+
 
 unSyncInteger :: Word32 -> Maybe Word32
 unSyncInteger n
@@ -122,7 +137,8 @@ unSyncField :: BS.ByteString -> Word32
 unSyncField val = do
   let result = unSyncInteger (decode (BL.fromStrict val))
   case result of
-    Nothing -> error "The file appears to be corrupt."
+    Nothing -> error $ "There was an error unsyncing the field with value "
+               ++ show (BS.unpack val)
     Just num -> num
 
 skipPadding :: (MonadResource m) => Conduit BS.ByteString m BS.ByteString
@@ -140,7 +156,7 @@ fun path = do
   (stream, t) <- CB.sourceFile path
                  $$+ parseTagHeader
   liftIO $ putStrLn $ show t
-  stream $$+- getFrames =$ CM.mapM_ (liftIO . print)
+  stream $$+- CB.isolate (fromEnum $ size t) =$ getFrames =$ CM.mapM_ (liftIO . print)
   
 yieldWhileJust :: Monad m => ConduitM a b m (Maybe b) -> Conduit a m b
 yieldWhileJust consumer =
@@ -153,5 +169,8 @@ yieldWhileJust consumer =
               Just x -> yield x >> loop
 
 main = do
-  (path:args) <- getArgs
-  runResourceT $ fun path
+  paths <- getArgs
+  mapM_ (\path -> do
+           runResourceT $ fun path
+           loadLocalFile path
+        ) paths
