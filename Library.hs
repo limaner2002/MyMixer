@@ -49,9 +49,7 @@ replacePlaylistTracks playlistUri trackUris = do
   if userId currentUser == playlistOwner
   then do
     let urls = map (\x -> url x currentUser) $ map uriChunk chunks               
-    -- replaceResult <- authRequest' (head urls) "PUT"
-    -- results <- mapM (\url -> authRequest url) urls
-    results <- replace urls
+    results <- replace currentUser urls
     liftIO $ mapM_ (putStrLn . show . snd) results
   else return ()
     where
@@ -61,8 +59,12 @@ replacePlaylistTracks playlistUri trackUris = do
       playlistId = extractId playlistUri
       url chunk currentUser = baseUrl ++ userId currentUser ++ "/playlists/"
                                  ++ playlistId ++ "/tracks?uris=" ++ chunk
-      replace [] = return []
-      replace (url:urls) = do
+      replace currentUser [] = do
+        let emptyUrl = baseUrl ++ userId currentUser ++ "/playlists/"
+                               ++ playlistId ++ "/tracks?uris="
+        result <- authRequest' emptyUrl "PUT"
+        return [result]
+      replace currentUser (url:urls) = do
         replaceResult <- authRequest' url "PUT"
         results <- mapM (\url -> authRequest url) urls
         return $ replaceResult : results
@@ -147,7 +149,7 @@ spotifySearch query = do
 findTracks :: FilePath -> Flow ([Either String Track])
 findTracks path = do
   queryLines <- liftIO $ withFile path ReadMode (\handle -> getLines handle)
-  let queries = map (\x -> query x) queryLines
+  let queries = map (\x -> query x) $ filter (\line -> length line > 0) queryLines
   mapM spotifySearch queries
  where
    query x = SpotifyQuery (artist x) (track x)
