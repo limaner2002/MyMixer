@@ -42,8 +42,19 @@ start path = do
 
 run :: Command -> Flow ()
 run (TmpAdd path) = liftIO $ putStrLn "Adding tracks to tmp playlist"
-run (ReadPlaylists path) = liftIO $ putStrLn "Updating source playlists from local files."
-run (WritePlaylists path) = liftIO $ putStrLn "Updating local files from source playlists."
+run (ReadPlaylists path) = do
+  liftIO $ putStrLn "Updating source playlists from local files."
+  retcode <- getSources path readPlaylists
+  if retcode == 0
+  then liftIO $ putStrLn "Success!"
+  else liftIO $ putStrLn "Something went wrong!"
+run (WritePlaylists path) = do
+  liftIO $ putStrLn "Updating local files from source playlists."
+  retCode <- getSources path writePlaylists
+  if retCode == 0
+  then liftIO $ putStrLn "Success!"
+  else liftIO $ putStrLn "Something went wrong!"
+           
 run (Search path) = do
   liftIO $ putStrLn "Looking for the tracks in spotify's library."
   results <- findTracks path
@@ -52,6 +63,7 @@ run (Search path) = do
                           Left msg -> putStrLn msg
                           Right track -> putStrLn $ trackUri track)
                         results
+run (LocalSearch directory) = findLocalTracks directory
 
 opts :: ParserInfo Command
 opts = info (parseArgs <**> helper) idm

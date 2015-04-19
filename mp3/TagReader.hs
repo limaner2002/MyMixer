@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
-
+module TagReader
+    where
 import Control.Monad.Trans.Resource
 import Control.Monad.Trans.Class (lift)
 import Control.Monad (void)
@@ -18,7 +19,7 @@ import Data.Char
 import System.Environment
 
 -- Make sure to remove this soon
-import HSPlayer
+-- import HSPlayer
 
 type ID3Data = BS.ByteString
 
@@ -168,9 +169,9 @@ yieldWhileJust consumer =
               Nothing -> return ()
               Just x -> yield x >> loop
 
-main = do
-  paths <- getArgs
-  mapM_ (\path -> do
-           runResourceT $ fun path
-           loadLocalFile path
-        ) paths
+-- main = do
+--   paths <- getArgs
+--   mapM_ (\path -> do
+--            runResourceT $ fun path
+--            loadLocalFile path
+--         ) paths

@@ -39,7 +39,7 @@ addTracks playlistId trackIds = do
       uriChunk ids = foldr (\x y -> x ++ "," ++ y) "" (init ids) ++ last ids
       baseUrl = "https://api.spotify.com/v1/users/"
       url chunk currentUser = baseUrl ++ userId currentUser ++ "/playlists/"
-      	     	 	       ++ playlistId ++ "/tracks?uris=" ++ chunk
+                               ++ playlistId ++ "/tracks?uris=" ++ chunk
 
 replacePlaylistTracks :: String -> [String] -> Flow ()
 replacePlaylistTracks playlistUri trackUris = do
@@ -82,9 +82,9 @@ writePlaylists ((path, playlist):playlists) = do
   let href = trackObjectHref $ tracks playlist
   tracks <- getTracks href
   liftIO (do
-  	     putStrLn $ "Writing to " ++ path
-	     withFile path WriteMode (\handle -> do
-	     	      	   mapM_ ((hPutStrLn handle) . trackUri . track) tracks)
+             putStrLn $ "Writing to " ++ path
+             withFile path WriteMode (\handle -> do
+                           mapM_ ((hPutStrLn handle) . trackUri . track) tracks)
          )
 
   writePlaylists playlists
@@ -156,3 +156,7 @@ findTracks path = do
    artist x = (l x) !! 0
    track x = (l x) !! 1
    l x = splitOn "\t" x
+
+findLocalTracks :: DirectoryPath -> Flow ()
+findLocalTracks directory = do
+  liftIO $ putStrLn $ "Looking in " ++ directory ++ " for local music."

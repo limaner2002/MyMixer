@@ -43,7 +43,7 @@ extractUserName uri = (splitOn ":" uri) !! 2
 getURIs :: FilePath -> IO [String]
 getURIs path = do
   withFile path ReadMode (\handle -> do
-       		     getLines handle)
+                     getLines handle)
 
 printTracks :: Maybe Tracks -> IO ()
 printTracks Nothing = return ()

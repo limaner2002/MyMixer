@@ -49,9 +49,9 @@ instance Show Track
 instance FromJSON Track
   where
      parseJSON (Object o) = Track <$> o .: "name" <*>
-     	       	       	    	      o .: "artists" <*>
-				      o .: "album" <*>
-				      o .: "uri"
+                                      o .: "artists" <*>
+                                      o .: "album" <*>
+                                      o .: "uri"
 
      parseJSON _ = mzero
 
@@ -69,10 +69,10 @@ instance FromJSON Tracks
 instance Show Tracks
   where
      show tracks = do
-     	  let tList = map (\track -> artist track ++ "\t" ++ trackName track) $ trackList tracks
-     	  foldr (\x y -> x ++ "\n" ++ y) "" $ tList
-     	     where
-		artist track = artistName . head $ artists track
+          let tList = map (\track -> artist track ++ "\t" ++ trackName track) $ trackList tracks
+          foldr (\x y -> x ++ "\n" ++ y) "" $ tList
+             where
+                artist track = artistName . head $ artists track
 
 instance Monoid Tracks
   where
@@ -92,12 +92,12 @@ data PagingObject a = PagingObject
 instance (FromJSON a) => FromJSON (PagingObject a)
   where
     parseJSON (Object o) = PagingObject <$> o .: "href" <*>
-    	      	      	   		    o .: "items" <*>
-					    o .: "limit" <*>
-					    o .:? "next" <*>
-					    o .: "offset" <*>
-					    o .:? "previous" <*>
-					    o .: "total"
+                                            o .: "items" <*>
+                                            o .: "limit" <*>
+                                            o .:? "next" <*>
+                                            o .: "offset" <*>
+                                            o .:? "previous" <*>
+                                            o .: "total"
 
     parseJSON _ = mzero
 
@@ -105,8 +105,8 @@ instance Monoid (PagingObject a)
   where
     mempty = PagingObject [] [] 0 Nothing 0 Nothing 0
     mappend (PagingObject _ lItems _ _ _ _ lTotal)
-    	    (PagingObject _ rItems _ _ _ _ rTotal) = 
-	    		  PagingObject [] (lItems ++ rItems) 0 Nothing 0 Nothing (lTotal + rTotal)
+            (PagingObject _ rItems _ _ _ _ rTotal) = 
+                          PagingObject [] (lItems ++ rItems) 0 Nothing 0 Nothing (lTotal + rTotal)
 
 data SavedTrack = SavedTrack
   { added_at :: String,
@@ -116,7 +116,7 @@ data SavedTrack = SavedTrack
 instance FromJSON SavedTrack
   where
     parseJSON (Object o) = SavedTrack <$> o .: "added_at" <*>
-    	      	      	   	      	  o .: "track"
+                                          o .: "track"
     parseJSON _ = mzero
 
 instance Show SavedTrack
@@ -138,15 +138,15 @@ data UserObjectPrivate = UserObjectPrivate
 instance FromJSON UserObjectPrivate
   where
     parseJSON (Object o) = UserObjectPrivate <$>
-    	      	      	       o .:? "birthdate" <*>
-			       o .: "country" <*>
-			       o .:? "display_name" <*>
-			       o .:? "email" <*>
-			       o .: "href" <*>
-			       o .: "id" <*>
-			       o .: "product" <*>
-			       o .: "type" <*>
-			       o .: "uri"
+                               o .:? "birthdate" <*>
+                               o .: "country" <*>
+                               o .:? "display_name" <*>
+                               o .:? "email" <*>
+                               o .: "href" <*>
+                               o .: "id" <*>
+                               o .: "product" <*>
+                               o .: "type" <*>
+                               o .: "uri"
 
     parseJSON _ = mzero
 
@@ -160,28 +160,28 @@ data SimplifiedPlaylistObject = SimplifiedPlaylistObject
 instance FromJSON SimplifiedPlaylistObject
   where
     parseJSON (Object o) = SimplifiedPlaylistObject <$>
-    	      	      	       o .: "name" <*>
-			       o .: "uri" <*>
-			       o .: "href" <*>
-			       o .: "tracks"
+                               o .: "name" <*>
+                               o .: "uri" <*>
+                               o .: "href" <*>
+                               o .: "tracks"
     parseJSON _ = mzero
 --     parseJSON value = do
 --       withObject "SimplifiedPlaylistObject" (\obj -> do
---       		     name <- obj .: "name"
--- 		     uri <- obj .: "uri"
--- 		     href <- obj .: "href"
--- 		     tracks <- (parseJSON value :: Parser PlaylistTrackObject)
--- 		     return $ SimplifiedPlaylistObject 
--- 		     	        name uri href (Left tracks)
--- 		     ) value
+--                           name <- obj .: "name"
+--                   uri <- obj .: "uri"
+--                   href <- obj .: "href"
+--                   tracks <- (parseJSON value :: Parser PlaylistTrackObject)
+--                   return $ SimplifiedPlaylistObject 
+--                              name uri href (Left tracks)
+--                   ) value
 --        parseJSON value = do
 --          withObject "SimplifiedPlaylistObject" (\obj -> do
--- 	 	      SimplifiedPlaylistObject <$>
--- 			obj .: "name" <*>
--- 			obj .: "uri" <*>
--- 			obj .: (parseJSON value :: Parser SimplifiedPlaylistObject)
--- 			    .!= (parseJSON value :: Parser [Track])
--- 		     ) value
+--                    SimplifiedPlaylistObject <$>
+--                      obj .: "name" <*>
+--                      obj .: "uri" <*>
+--                      obj .: (parseJSON value :: Parser SimplifiedPlaylistObject)
+--                          .!= (parseJSON value :: Parser [Track])
+--                   ) value
 
 instance Show SimplifiedPlaylistObject
   where
@@ -199,11 +199,11 @@ data FullPlaylistObject = FullPlaylistObject
 instance FromJSON FullPlaylistObject
   where
     parseJSON (Object o) = FullPlaylistObject <$>
-    	      	      	     o .: "name" <*>
-			     o .: "uri" <*>
-			     o .: "href" <*>
-			     o .: "snapshot_id" <*>
-			     o .: "tracks"
+                             o .: "name" <*>
+                             o .: "uri" <*>
+                             o .: "href" <*>
+                             o .: "snapshot_id" <*>
+                             o .: "tracks"
     parseJSON _ = mzero
 
 data TrackObject = TrackObject
@@ -214,8 +214,8 @@ data TrackObject = TrackObject
 instance FromJSON TrackObject
   where
     parseJSON (Object o) = TrackObject <$>
-    	      	      	     o .: "href" <*>
-			     o .: "total"
+                             o .: "href" <*>
+                             o .: "total"
 
     parseJSON _ = mzero
 
@@ -228,9 +228,9 @@ data PlaylistTrackObject = PlaylistTrackObject
 instance FromJSON PlaylistTrackObject
   where
     parseJSON (Object o) = PlaylistTrackObject <$>
-    	      	      	     o .: "added_at" <*>
--- 			     o .: "added_by" <*>
-			     o .: "track"
+                             o .: "added_at" <*>
+--                           o .: "added_by" <*>
+                             o .: "track"
     parseJSON _ = mzero
 
 
@@ -238,3 +238,5 @@ data SpotifyQuery = SpotifyQuery
     { queryArtist :: String,
       queryTrack :: String
     }
+
+type DirectoryPath = String
