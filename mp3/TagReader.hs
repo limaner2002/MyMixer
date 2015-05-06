@@ -17,7 +17,10 @@ import Data.Bits
 import Data.Binary
 import Data.Char
 import System.Environment
+import qualified Data.Map as Map
 
+import Resources
+import Data.Maybe
 -- Make sure to remove this soon
 -- import HSPlayer
 
@@ -148,16 +151,40 @@ skipPadding = CM.map $ BS.dropWhile (\x -> x == 0x00)
 ignore :: (MonadResource m) => Int -> Conduit BS.ByteString m BS.ByteString
 ignore n = CM.map $ BS.drop n
 
-getFrames :: (MonadResource m) => Conduit BS.ByteString m FrameHeader
-getFrames = do
-  yieldWhileJust parseFrame
+getFrames :: (MonadResource m) => Conduit BS.ByteString m (Map.Map ID3Data ID3Data)
+getFrames = loop Map.empty
+  where
+    loop m = do
+      frame <- parseFrame
+      case frame of
+        Nothing -> yield m
+        Just frame -> loop $ updated frame m
+    updated (FrameHeader frameID _ _ val) m = Map.insert frameID val m
+    updated _ m = m
 
-fun :: (MonadResource m) => FilePath -> m ()
-fun path = do
+createTrack :: (MonadIO m, MonadResource m) => Consumer (Map.Map ID3Data ID3Data) m ()
+createTrack = addCleanup (\_ -> liftIO $ putStrLn "Finished.") $ loop 1
+    where
+      loop n = do
+        frameMap <- await
+        case frameMap of
+          Nothing -> return ()
+          Just frameMap -> liftIO $ print $ localTrack frameMap
+      localTrack m = do
+        let title = C8.unpack $ fromMaybe "" $ Map.lookup "TIT2" m
+        let artist = C8.unpack $ fromMaybe "" $ Map.lookup "TPE1" m
+        let album = C8.unpack $ fromMaybe "" $ Map.lookup "TALB" m
+        LocalTrack "path" "localURI"
+                   title artist album
+
+-- Opens the file, reads the tag and prints the information out to the
+-- screen.
+readTag :: (MonadIO m, MonadResource m) => FilePath -> m ()
+readTag path = do
   (stream, t) <- CB.sourceFile path
                  $$+ parseTagHeader
   liftIO $ putStrLn $ show t
-  stream $$+- CB.isolate (fromEnum $ size t) =$ getFrames =$ CM.mapM_ (liftIO . print)
+  stream $$+- CB.isolate (fromEnum $ size t) =$ getFrames =$ createTrack
   
 yieldWhileJust :: Monad m => ConduitM a b m (Maybe b) -> Conduit a m b
 yieldWhileJust consumer =
@@ -168,10 +195,3 @@ yieldWhileJust consumer =
             case mx of
               Nothing -> return ()
               Just x -> yield x >> loop
-
--- main = do
---   paths <- getArgs
---   mapM_ (\path -> do
---            runResourceT $ fun path
---            loadLocalFile path
---         ) paths

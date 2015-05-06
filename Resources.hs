@@ -40,11 +40,18 @@ data Track = Track
      artists :: [Artist],
      album :: Album,
      trackUri :: String
-  } 
+  } | LocalTrack
+  {  localPath :: String,
+     localUri :: String,
+     localTitle :: String,
+     localArtist :: String,
+     localAlbum :: String
+  }
 
 instance Show Track
   where
      show (Track trackName artists _ _) = trackName ++ "\t" ++ (artistName $ head artists)
+     show (LocalTrack _ _ title artist album) = title ++ "\t" ++ artist ++ "\t" ++ album
 
 instance FromJSON Track
   where

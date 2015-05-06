@@ -63,6 +63,11 @@ run (Search path) = do
                           Left msg -> putStrLn msg
                           Right track -> putStrLn $ trackUri track)
                         results
+  liftIO $ mapM_ (\x -> do
+                        case x of
+                          Left msg -> return ()
+                          Right track -> putStrLn $ (artistName $ head $ artists track) ++ "\t" ++ trackName track
+                 ) results
 run (LocalSearch directory) = findLocalTracks directory
 
 opts :: ParserInfo Command

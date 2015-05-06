@@ -16,6 +16,8 @@ data DirContent = DirList [FilePath] [FilePath]
 
 data DirData = DirData FilePath DirContent
 
+-- Gets the contents of the 'path' and recursively walks through all
+-- subdirectories.
 walk :: FilePath -> Source IO DirData
 walk path = do
   result <- lift $ tryIOError listDir
@@ -32,6 +34,8 @@ walk path = do
    filterHidden paths = return $ filter (\x -> head x /= '.') paths
    isDir entry = doesDirectoryExist (path </> entry)
 
+-- Gets the filtered contents of the directory walk and passes the
+-- full path to the tag reader.
 displayContents :: Sink DirData IO ()
 displayContents = addCleanup (\_ -> putStrLn "Finished.") $ loop 1
     where
@@ -47,9 +51,11 @@ displayContents = addCleanup (\_ -> putStrLn "Finished.") $ loop 1
         let fullPaths = map ((path ++ "/") ++ ) contents
         mapM_ (\path -> do
                         putStrLn $ "Opening " ++ path
-                        runResourceT $ fun path) fullPaths
-        -- -- forM_ (subdirs ++ contents) (putStrLn . ("\t\t- " ++))
+                        runResourceT $ readTag path) fullPaths
 
+-- Filters the directory contents to only include those with the
+-- '.mp3' extension. Support for other file formats is not expected
+-- any time soon.
 getMusicFiles :: Conduit DirData IO DirData
 getMusicFiles = do
   r <- await
@@ -60,6 +66,7 @@ getMusicFiles = do
                   yield $ DirData path $ DirList subdirs musicFiles
                   getMusicFiles
 
+-- Utility functions
 hasExtension :: FilePath -> Ext -> Bool
 hasExtension path ext = and $ zipWith (==) (reverse path) (reverse ext)
 
