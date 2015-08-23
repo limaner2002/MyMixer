@@ -59,6 +59,5 @@ char* GetPasswordKeychain (void* serviceName, UInt32 serviceNameLength,
 }
 
 void ffree(char *ptr){
-  printf("Freeing pointer at %p\n", ptr);
   free(ptr);
 }

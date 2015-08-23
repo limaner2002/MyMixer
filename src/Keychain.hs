@@ -16,12 +16,12 @@ foreign import ccall "GetPasswordKeychain" c_GetPasswordKeychain :: Ptr a -> CUI
                                                                     CUInt -> CString
 foreign import ccall "&ffree" ffree :: FunPtr (CString -> IO())
 
-saveRefreshToken :: String -> String -> Maybe String -> IO ()
+saveRefreshToken :: String -> String -> Maybe BS.ByteString -> IO ()
 saveRefreshToken _ _ Nothing = BS.hPutStrLn stderr "No refresh token to save!"
 saveRefreshToken service account (Just pass) = do
   cService <- newCStringLen service
   cAccount <- newCStringLen account
-  cPass <- newCStringLen pass
+  cPass <- newCStringLen $ BS.unpack pass
 
   newForeignPtr ffree (fst cService)
   newForeignPtr ffree (fst cAccount)
