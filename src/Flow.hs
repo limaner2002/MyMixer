@@ -13,6 +13,7 @@ import Control.Monad.Reader (ReaderT, MonadReader)
 import Database.Persist.Sql (SqlPersistT, SqlBackend)
 import Control.Monad.Logger (NoLoggingT, LoggingT, logInfoN)
 import Control.Monad.Trans.Resource (ResourceT)
+import qualified Data.Text as T
 import Database.Persist ( insert
                         , insert_
                         , repsert
@@ -133,8 +134,9 @@ insertFlow = do
     case flowToken flow of
       Nothing -> insert_ $ fromFlow Nothing flow
       Just tok -> do
-               tokId <- insert $ fromToken tok
-               repsert $ fromFlow (Just tokId) flow
+               let tokId = (AccessTokenEntryKey 1)
+               repsert tokId $ fromToken tok
+               repsert (FlowEntryKey 1) $ fromFlow (Just tokId) flow
 
 retrieveFlow :: MonadIO m => String -> String -> ReaderT SqlBackend m (Maybe OAuth2WebServerFlow)
 retrieveFlow service account = do

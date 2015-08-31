@@ -69,7 +69,8 @@ main = do
   curTime <- getCurrentTime
 
   let dbPath = (T.concat [T.pack confDir, "/db.sqlite"])
-  oldFlow <- runSqlite dbPath (retrieveFlow "My Spotify Mixer 0.2"
+  oldFlow <- runSqlite dbPath (runMigration migrateAll >>
+                               retrieveFlow "My Spotify Mixer 0.2"
                                             "MyMixer"
                               )
 
