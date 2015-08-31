@@ -9,68 +9,79 @@ import Control.Monad.Trans.Except
 import Data.Aeson
 import Data.Time
 import System.IO (stderr)
-import Control.Monad.Reader (ReaderT)
-import Database.Persist.Sql (SqlPersistT)
-import Control.Monad.Logger (NoLoggingT)
+import Control.Monad.Reader (ReaderT, MonadReader)
+import Database.Persist.Sql (SqlPersistT, SqlBackend)
+import Control.Monad.Logger (NoLoggingT, LoggingT, logInfoN)
 import Control.Monad.Trans.Resource (ResourceT)
-import Database.Persist (insert)
+import Database.Persist ( insert
+                        , insert_
+                        , repsert
+                        , selectFirst
+                        , entityVal
+                        , Entity
+                        )
 
 import Model
 import Keychain
 
-type Flow = SqlPersistT (NoLoggingT (ResourceT (ExceptT BL.ByteString (StateT OAuth2WebServerFlow IO))))
+type Flow = SqlPersistT (NoLoggingT (ResourceT (LoggingT (ExceptT BL.ByteString (StateT OAuth2WebServerFlow IO)))))
 
-throwError = lift . lift . lift . throwE
+throwError = lift . lift . lift . lift . throwE
+logInfo = lift . lift . logInfoN
 
 flowGetJSON :: FromJSON a => URI -> Flow (OAuth2Result a)
 flowGetJSON uri = do
   tok <- checkToken
-  flow <- get
-  let mgr = manager flow
+  mgr <- gets manager
+
   liftIO $ authGetJSON mgr tok uri
 
 flowGetBS :: URI -> Flow (OAuth2Result BL.ByteString)
 flowGetBS uri = do
   tok <- checkToken
-  flow <- get
-  let mgr = manager flow
+  mgr <- gets manager
 
   liftIO $ authGetBS mgr tok uri
 
 flowGetBS' :: URI -> Flow (OAuth2Result BL.ByteString)
 flowGetBS' uri = do
   tok <- checkToken
-  flow <- get
-  let mgr = manager flow
+  mgr <- gets manager
 
   liftIO $ authGetBS' mgr tok uri
 
 flowPostJSON :: URI -> PostBody -> Flow (OAuth2Result BL.ByteString)
 flowPostJSON uri pb = do
   tok <- checkToken
-  flow <- get
-  let mgr = manager flow
+  mgr <- gets manager
+
   liftIO $ authPostBS mgr tok uri pb
 
 -- | Checks to see if the flow has a token and fetches a new one if
 -- one does not exist or refreshes an expired one
 --
 --
-checkToken :: Flow AccessToken
+checkToken :: Flow AccessToken -- OAuth2WebServerFlow -> OAuth2WebServerFlow
 checkToken = do
   flow <- get
   case flowToken flow of
              Nothing -> do
-               liftIO $ BS.hPutStrLn stderr "No valid token found. Requesting new one"
+               logInfo "No valid token found. Requesting new one"
                getToken
                flow <- get
-               case flowToken flow of
-                 Nothing -> throwError $ BL.concat ["Invalid token in function 'checkToken'"]
-                 Just tok -> return tok
+               -- insert $ fromFlow flow
+               insertFlow
+               extractMaybe flowToken flow "Invalid token in function 'checkToken'"
              Just tok -> do
                         now <- liftIO getCurrentTime
-                        if (diffUTCTime now (timestamp flow)) > 3300
-                        then get >>= (\x -> extractMaybe flowToken x "checkToken: Token should have refreshed, but it is not here for some reason.")
+                        if (diffUTCTime now (timestamp flow)) > 3540
+                        then do
+                          logInfo "Token has expired, refreshing now"
+                          refreshAuthToken
+                          flow <- get
+                          -- insert $ fromFlow flow
+                          insertFlow
+                          extractMaybe flowToken flow "checkToken: Token should have refreshed, but it is not here for some reason."
                         else return tok
 
 getToken :: Flow ()
@@ -85,7 +96,6 @@ getToken = do
   res <- liftIO $ fetchAccessToken mgr key code
   tok <- handleResult res "Could not get token: "
   liftIO $ saveRefreshToken (authService flow) (authAccount flow) (refreshToken tok)
-  insert $ fromFlow flow
   curTime <- liftIO getCurrentTime
   put $ flow { flowToken = Just $ tok
              , timestamp = curTime
@@ -103,7 +113,6 @@ refreshAuthToken = do
   res <- liftIO $ fetchRefreshToken mgr key rTok
   tok <- handleResult res "Could not refresh token: "
   curTime <- liftIO getCurrentTime
-  insert $ fromFlow flow
   put $ flow { flowToken = Just tok
              , timestamp = curTime
              }
@@ -117,3 +126,24 @@ extractMaybe f x msg = do
   case f x of
     Nothing -> throwError msg
     Just val -> return val
+
+insertFlow :: Flow ()
+insertFlow = do
+    flow <- get
+    case flowToken flow of
+      Nothing -> insert_ $ fromFlow Nothing flow
+      Just tok -> do
+               tokId <- insert $ fromToken tok
+               repsert $ fromFlow (Just tokId) flow
+
+retrieveFlow :: MonadIO m => String -> String -> ReaderT SqlBackend m (Maybe OAuth2WebServerFlow)
+retrieveFlow service account = do
+  flowEntity <- selectFirst [] []
+  tokenEntity <- selectFirst [] []
+  refreshToken <- liftIO $ fromKeychain service account
+  let flowEntry = fmap entityVal flowEntity
+      tokenEntry = fmap entityVal tokenEntity
+      rTok = fmap BS.pack refreshToken
+      mFlow = fmap (toFlow tokenEntry rTok) (flowEntry)
+
+  return $ mFlow
