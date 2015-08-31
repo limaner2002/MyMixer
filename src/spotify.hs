@@ -15,6 +15,7 @@ import Database.Persist.Sqlite (runSqlite, runMigration)
 import Model
 import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy.Char8 as BL
 import Control.Monad.Logger (runNoLoggingT)
 
 import Control.Monad.Reader (ReaderT)
@@ -22,14 +23,11 @@ import Database.Persist.Sql (SqlPersistT)
 import Control.Monad.Logger
 import System.Log.FastLogger (fromLogStr)
 import Control.Monad.Trans.Resource (ResourceT)
+import Network.OAuth.OAuth2 (OAuth2Result)
 
-myLogger :: Loc -> LogSource -> LogLevel -> LogStr -> IO ()
-myLogger _ _ LevelInfo msg = do
-  curTime <- getCurrentTime
-  timeZone <- getCurrentTimeZone
-  let localTime = utcToLocalTime timeZone curTime
-  putStrLn $ show localTime ++ ": " ++ (C8.unpack $ fromLogStr msg)
-myLogger _ _ _ _ = return ()
+import SpotifyTypes
+import Library
+import Util
 
 getConfDir :: IO String
 getConfDir = do
@@ -76,7 +74,10 @@ main = do
 
   let runDB = (runSqlite dbPath)
       fn = (evalStateT . runExceptT . (flip runLoggingT myLogger) . runDB)
-         (runMigration migrateAll >> checkToken)
+         ( do
+             runMigration migrateAll
+             getCurrentUser
+         )
          (createFlow oldFlow curTime mgr)
   res <- fn
 
