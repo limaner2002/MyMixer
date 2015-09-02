@@ -20,6 +20,9 @@ executable spotify
                      , Keychain
                      , Keys
                      , Model
+                     , Library
+                     , Util
+                     , SpotifyTypes
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2 -fllvm
   build-depends:       base
                      , hoauth2

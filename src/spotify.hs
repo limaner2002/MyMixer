@@ -29,6 +29,12 @@ import SpotifyTypes
 import Library
 import Util
 
+-- instance Show BL.ByteString where
+--     show = BL.unpack
+
+-- instance Show C8.ByteString where
+--     show = BL.unpack
+
 getConfDir :: IO String
 getConfDir = do
 #ifdef darwin_HOST_OS
@@ -76,9 +82,9 @@ main = do
       fn = (evalStateT . runExceptT . (flip runLoggingT myLogger) . runDB)
          ( do
              runMigration migrateAll
-             getCurrentUser
+             flowGetBS "https://api.spotify.com/v1/users/limaner2002/playlists"
          )
          (createFlow oldFlow curTime mgr)
   res <- fn
 
-  print res
+  mapM_ (mapM_ (putStrLn . BL.unpack)) res

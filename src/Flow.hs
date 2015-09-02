@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Flow where
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
-import Network.OAuth.OAuth2
+import qualified Data.Text as T
+import Network.OAuth.OAuth2 hiding (URI)
 import Network.HTTP.Conduit
 import Control.Monad.State
 import Control.Monad.Trans.Except
@@ -27,6 +28,10 @@ import Keychain
 
 type Flow = SqlPersistT (NoLoggingT (ResourceT (LoggingT (ExceptT BL.ByteString (StateT OAuth2WebServerFlow IO)))))
 
+type URI = T.Text
+
+repack = C8.pack . T.unpack
+
 throwError = lift . lift . lift . lift . throwE
 logInfo = lift . lift . logInfoN
 
@@ -35,28 +40,28 @@ flowGetJSON uri = do
   tok <- checkToken
   mgr <- gets manager
 
-  liftIO $ authGetJSON mgr tok uri
+  liftIO $ authGetJSON mgr tok (repack uri)
 
 flowGetBS :: URI -> Flow (OAuth2Result BL.ByteString)
 flowGetBS uri = do
   tok <- checkToken
   mgr <- gets manager
 
-  liftIO $ authGetBS mgr tok uri
+  liftIO $ authGetBS mgr tok (repack uri)
 
 flowGetBS' :: URI -> Flow (OAuth2Result BL.ByteString)
 flowGetBS' uri = do
   tok <- checkToken
   mgr <- gets manager
 
-  liftIO $ authGetBS' mgr tok uri
+  liftIO $ authGetBS' mgr tok $ repack uri
 
 flowPostJSON :: URI -> PostBody -> Flow (OAuth2Result BL.ByteString)
 flowPostJSON uri pb = do
   tok <- checkToken
   mgr <- gets manager
 
-  liftIO $ authPostBS mgr tok uri pb
+  liftIO $ authPostBS mgr tok (repack uri) pb
 
 -- | Checks to see if the flow has a token and fetches a new one if
 -- one does not exist or refreshes an expired one
@@ -91,9 +96,9 @@ getToken = do
   let mgr = manager flow
       key = oauth2 flow
       scope = flowScope flow
-  liftIO $ BS.putStrLn $ authorizationUrl key `appendQueryParam` scope
+  liftIO $ C8.putStrLn $ authorizationUrl key `appendQueryParam` scope
   liftIO $ putStrLn "visit the url and paste the code here: "
-  code <- liftIO $ fmap BS.pack getLine
+  code <- liftIO $ fmap C8.pack getLine
   res <- liftIO $ fetchAccessToken mgr key code
   tok <- handleResult res "Could not get token: "
   liftIO $ saveRefreshToken (authService flow) (authAccount flow) (refreshToken tok)
@@ -145,7 +150,7 @@ retrieveFlow service account = do
   refreshToken <- liftIO $ fromKeychain service account
   let flowEntry = fmap entityVal flowEntity
       tokenEntry = fmap entityVal tokenEntity
-      rTok = fmap BS.pack refreshToken
+      rTok = fmap C8.pack refreshToken
       mFlow = fmap (toFlow tokenEntry rTok) (flowEntry)
 
   return $ mFlow
