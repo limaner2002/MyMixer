@@ -10,7 +10,7 @@ import Control.Monad.Trans.Except
 import Keys
 import Data.Time
 import System.Directory
-import Database.Persist (insert)
+import Database.Persist (insert, selectList, entityVal)
 import Database.Persist.Sqlite (runSqlite, runMigration)
 import Model
 import qualified Data.Text as T
@@ -82,9 +82,13 @@ main = do
       fn = (evalStateT . runExceptT . (flip runLoggingT myLogger) . runDB)
          ( do
              runMigration migrateAll
-             flowGetBS "https://api.spotify.com/v1/users/limaner2002/playlists"
+             playlists <- getUserPlaylists
+             desired <- selectList [] []
+             let desiredPlaylists = getSourcePlaylists playlists $ fmap entityVal desired
+             trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
+             return $ fmap (fmap track) trackObjs
          )
          (createFlow oldFlow curTime mgr)
   res <- fn
 
-  mapM_ (mapM_ (putStrLn . BL.unpack)) res
+  mapM_ (mapM_ (putStrLn . show)) res

@@ -9,12 +9,22 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards   #-}
 
+-- module Model ( SourcePlaylists
+--              , fromToken
+--              , fromFlow
+--              , toToken
+--              , toFlow
+--              , OAuth2WebServerFlow (..)
+--              , AccessTokenEntry
+--              , FlowEntry
+--              ) where
 module Model where
 import Database.Persist.TH
 import Database.Persist.Sql (SqlPersistT)
 import Database.Persist (insert)
 import Network.OAuth.OAuth2
 import qualified Data.ByteString as BS
+import qualified Data.Text as T
 import Data.Time
 import Network.HTTP.Conduit (Manager)
 
@@ -27,6 +37,9 @@ FlowEntry
   token AccessTokenEntryId Maybe
   timestamp UTCTime
   deriving Show
+SourcePlaylists
+  uuid T.Text
+  Primary uuid
 |]
 
 fromToken :: AccessToken -> AccessTokenEntry

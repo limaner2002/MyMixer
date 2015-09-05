@@ -24,7 +24,7 @@ import Database.Persist ( insert
                         )
 
 import Model
-import Keychain
+import Keychain hiding (checkResult)
 
 type Flow = SqlPersistT (NoLoggingT (ResourceT (LoggingT (ExceptT BL.ByteString (StateT OAuth2WebServerFlow IO)))))
 
@@ -154,3 +154,10 @@ retrieveFlow service account = do
       mFlow = fmap (toFlow tokenEntry rTok) (flowEntry)
 
   return $ mFlow
+
+fetchObject :: FromJSON a => (URI -> Flow a)
+fetchObject = (\x -> flowGetJSON x >>= checkResult)
+
+checkResult :: Either BL.ByteString a -> Flow a
+checkResult (Left msg) = throwError msg
+checkResult (Right val) = return val
