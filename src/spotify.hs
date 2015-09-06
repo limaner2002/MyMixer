@@ -28,6 +28,7 @@ import Network.OAuth.OAuth2 (OAuth2Result)
 import SpotifyTypes
 import Library
 import Util
+import Types
 
 -- instance Show BL.ByteString where
 --     show = BL.unpack
@@ -66,13 +67,11 @@ createFlow Nothing curTime mgr =
 
 main :: IO ()
 main = do
-  confDir <- getConfDir
-  createDirectoryIfMissing True confDir
+  dbPath <- getDBPath "db.sqlite"
 
   mgr <- newManager tlsManagerSettings
   curTime <- getCurrentTime
 
-  let dbPath = (T.concat [T.pack confDir, "/db.sqlite"])
   oldFlow <- runSqlite dbPath (runMigration migrateAll >>
                                retrieveFlow "My Spotify Mixer 0.2"
                                             "MyMixer"
@@ -82,6 +81,7 @@ main = do
       fn = (evalStateT . runExceptT . (flip runLoggingT myLogger) . runDB)
          ( do
              runMigration migrateAll
+             runMigration migrateFlow
              playlists <- getUserPlaylists
              desired <- selectList [] []
              let desiredPlaylists = getSourcePlaylists playlists $ fmap entityVal desired

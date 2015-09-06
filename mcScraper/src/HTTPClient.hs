@@ -11,13 +11,13 @@ import Control.Applicative
 import qualified Data.ByteString.Lazy as BL
 import Control.Monad.Trans.Resource
 import Control.Monad.IO.Class
-import Control.Concurrent
+import Control.Concurrent.STM
 import System.IO.Unsafe (unsafePerformIO)
 
-import Model
+import Types
 
-dbLock :: MVar Int
-dbLock = unsafePerformIO (newMVar 1)
+dbLock :: TMVar Int
+dbLock = unsafePerformIO $ newTMVarIO 1
 
 getStationInfo :: Manager -> Int -> Scraper ()
 getStationInfo mgr stationID = do
@@ -29,10 +29,10 @@ getStationInfo mgr stationID = do
     Just track -> do
            liftIO $ putStrLn $ "Station ID: " ++ show stationID
            liftIO $ putStrLn $ show track ++ "\n"
-           lock <- liftIO $ takeMVar dbLock
+           lock <- liftIO $ atomically $ takeTMVar dbLock
            insertIfDifferent (track { trackStation = stationID })
            transactionSave
-           liftIO $ putMVar dbLock lock
+           liftIO $ atomically $ putTMVar dbLock lock
            put $ Just track
       
 insertIfDifferent :: Track -> Scraper ()

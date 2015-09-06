@@ -2,7 +2,7 @@
 module Library where
 
 import Flow
-import Model (SourcePlaylists, sourcePlaylistsUuid)
+import Types (SourcePlaylists, sourcePlaylistsUuid)
 import SpotifyTypes
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
@@ -45,3 +45,6 @@ getPlaylistTracks playlist =
   where
     trackUri = Just $ trackObjectHref trackObj
     trackObj = tracks playlist
+
+findTrack :: Track -> Flow (Either T.Text Track)
+findTrack track = 

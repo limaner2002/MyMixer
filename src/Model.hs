@@ -28,7 +28,7 @@ import qualified Data.Text as T
 import Data.Time
 import Network.HTTP.Conduit (Manager)
 
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+share [mkPersist sqlSettings, mkMigrate "migrateFlow"] [persistLowerCase|
 AccessTokenEntry
   accessToken BS.ByteString
   expiresIn Int Maybe
@@ -37,14 +37,6 @@ FlowEntry
   token AccessTokenEntryId Maybe
   timestamp UTCTime
   deriving Show
-SourcePlaylists
-  uuid T.Text
-  Primary uuid
-SimplifiedPlaylistEntry
-  name T.Text
-  uri T.Text
-  href T.Text
-  
 |]
 
 fromToken :: AccessToken -> AccessTokenEntry

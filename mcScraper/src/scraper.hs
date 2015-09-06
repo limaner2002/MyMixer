@@ -11,7 +11,7 @@ import Control.Monad.IO.Class
 import Tabular
 import HTTPClient
 import Util
-import Model
+import Types
 
 delay = truncate 30e6
 
@@ -52,7 +52,7 @@ mainLoop mgr stationID maxTime = do
 main :: IO ()
 main = do
   mgr <- newManager tlsManagerSettings
-  db <- getDBPath "mc.sqlite"
+  db <- getDBPath "db.sqlite"
 
   putStrLn "How long do you want this to run?"
   line <- getLine

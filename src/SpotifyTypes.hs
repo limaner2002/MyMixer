@@ -105,9 +105,9 @@ instance (FromJSON a) => FromJSON (SpotifyPagingObject a)
 --     parseJSON _ = mzero
 
 data PlaylistTrackObject = PlaylistTrackObject
-  { addedAt :: String,
+  { addedAt :: T.Text,
 --     addedBy :: String,
-    track :: Track
+    track :: SpotifyTrack
   }
 
 instance FromJSON PlaylistTrackObject
@@ -118,28 +118,28 @@ instance FromJSON PlaylistTrackObject
                              o .: "track"
     parseJSON _ = mzero
 
-data Track = Track
+data SpotifyTrack = SpotifyTrack
   {
-     trackName :: String,
+     trackName :: T.Text,
      artists :: [Artist],
      album :: Album,
-     trackUri :: String
+     trackUri :: T.Text
   } | LocalTrack
-  {  localPath :: String,
-     localUri :: String,
-     localTitle :: String,
-     localArtist :: String,
-     localAlbum :: String
+  {  localPath :: T.Text,
+     localUri :: T.Text,
+     localTitle :: T.Text,
+     localArtist :: T.Text,
+     localAlbum :: T.Text
   }
 
-instance Show Track
+instance Show SpotifyTrack
   where
-     show (Track trackName artists _ _) = trackName ++ "\t" ++ (artistName $ head artists)
-     show (LocalTrack _ _ title artist album) = title ++ "\t" ++ artist ++ "\t" ++ album
+     show (SpotifyTrack trackName artists _ _) = show trackName ++ "\t" ++ (show $ artistName $ head artists)
+     show (LocalTrack _ _ title artist album) = show title ++ "\t" ++ show artist ++ "\t" ++ show album
 
-instance FromJSON Track
+instance FromJSON SpotifyTrack
   where
-     parseJSON (Object o) = Track <$> o .: "name" <*>
+     parseJSON (Object o) = SpotifyTrack <$> o .: "name" <*>
                                       o .: "artists" <*>
                                       o .: "album" <*>
                                       o .: "uri"
@@ -148,7 +148,7 @@ instance FromJSON Track
 
 data Artist = Artist
   {
-     artistName :: String
+     artistName :: T.Text
   } deriving Show
 
 instance FromJSON Artist
@@ -159,7 +159,7 @@ instance FromJSON Artist
 
 data Album = Album
   {
-     albumName :: String
+     albumName :: T.Text
   } deriving Show
 
 instance FromJSON Album
