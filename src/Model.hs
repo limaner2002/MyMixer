@@ -40,6 +40,11 @@ FlowEntry
 SourcePlaylists
   uuid T.Text
   Primary uuid
+SimplifiedPlaylistEntry
+  name T.Text
+  uri T.Text
+  href T.Text
+  
 |]
 
 fromToken :: AccessToken -> AccessTokenEntry
