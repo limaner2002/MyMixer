@@ -2,12 +2,13 @@
 module Library where
 
 import Flow
-import Types (SourcePlaylists, sourcePlaylistsUuid)
+import Types (SourcePlaylists, sourcePlaylistsUuid, Track (..))
 import SpotifyTypes
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
+import Network.HTTP.Types (urlEncode)
 
 getCurrentUser :: Flow UserObjectPrivate
 getCurrentUser = do
@@ -46,5 +47,19 @@ getPlaylistTracks playlist =
     trackUri = Just $ trackObjectHref trackObj
     trackObj = tracks playlist
 
-findTrack :: Track -> Flow (Either T.Text Track)
-findTrack track = 
+findTrack :: Track -> Flow (Maybe SpotifyTrack)
+findTrack track = do
+  res <- flowGetJSON searchURI :: Flow (Either BL.ByteString TrackList)
+  case res of
+    Left msg -> throwError msg
+    Right (TrackList trackList) ->
+        case items trackList of
+          [] -> do
+             logInfo notFoundMsg
+             return Nothing
+          tracks -> return $ Just $ head tracks
+ where
+   baseUrl = "https://api.spotify.com/v1/search?"
+   searchURI = T.concat [baseUrl, "q=artist:", textUrlEncode (trackArtist track), "+track:", textUrlEncode (trackName track), "&type=track"]
+   notFoundMsg = T.concat ["Could not find track ", trackArtist track, " - ", trackName track, "\nQuery URL: ", searchURI]
+   textUrlEncode = T.pack . C8.unpack . (urlEncode False) . C8.pack . T.unpack

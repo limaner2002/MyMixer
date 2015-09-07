@@ -24,6 +24,8 @@ import Control.Monad.Logger
 import System.Log.FastLogger (fromLogStr)
 import Control.Monad.Trans.Resource (ResourceT)
 import Network.OAuth.OAuth2 (OAuth2Result)
+import Control.Monad.IO.Class
+import Data.Maybe (catMaybes)
 
 import SpotifyTypes
 import Library
@@ -65,6 +67,26 @@ createFlow Nothing curTime mgr =
     , authAccount = "MyMixer"
     }
 
+findTracks :: Flow ()
+findTracks = do
+  liftIO $ putStrLn "Which station do you want to search tracks for?"
+  line <- liftIO $ getLine
+
+  scraped <- getScrapedTracks (read line)
+  mTracks <- sequence $ fmap findTrack scraped
+  let tracks = catMaybes mTracks
+  liftIO $ mapM_ (putStrLn . T.unpack . trackUri) tracks
+  liftIO $ mapM_ print tracks
+
+getDesiredPlaylists :: Flow ()
+getDesiredPlaylists = do
+  playlists <- getUserPlaylists
+  desired <- selectList [] []
+  let desiredPlaylists = getSourcePlaylists playlists $ fmap entityVal desired
+  trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
+  let tracks = fmap (fmap track) trackObjs
+  mapM_ (mapM_ (liftIO . putStrLn . show)) tracks
+
 main :: IO ()
 main = do
   dbPath <- getDBPath "db.sqlite"
@@ -82,13 +104,10 @@ main = do
          ( do
              runMigration migrateAll
              runMigration migrateFlow
-             playlists <- getUserPlaylists
-             desired <- selectList [] []
-             let desiredPlaylists = getSourcePlaylists playlists $ fmap entityVal desired
-             trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
-             return $ fmap (fmap track) trackObjs
+             findTracks
          )
          (createFlow oldFlow curTime mgr)
   res <- fn
-
-  mapM_ (mapM_ (putStrLn . show)) res
+  case res of
+    Left msg -> putStrLn $ BL.unpack msg
+    Right val -> return val

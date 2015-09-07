@@ -20,8 +20,11 @@ module Types ( Data.Aeson.decode
              , Control.Monad.State.get
              , Control.Monad.State.put
              , Scraper
+             , RPScraper
              , SourcePlaylists
              , sourcePlaylistsUuid
+             , getScrapedTracks
+             , Control.Monad.IO.Class.liftIO
              )where
 
 import Database.Persist.TH
@@ -40,12 +43,12 @@ import Tabular
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 Track
-  artist String
-  name String
-  album String
+  artist T.Text
+  name T.Text
+  album T.Text
   station Int
 Station
-  name String
+  name T.Text
   idNum Int
   Primary idNum
 SourcePlaylists
@@ -58,6 +61,8 @@ SimplifiedPlaylistEntry
 |]
 
 type Scraper = SqlPersistT (NoLoggingT (ResourceT (StateT (Maybe Track) IO)))
+type RPScraper = SqlPersistT (NoLoggingT (ResourceT IO))
+type StationID = Int
 
 instance FromJSON Track where
     parseJSON (Object o) = Track <$>
@@ -68,9 +73,9 @@ instance FromJSON Track where
 
 instance Show Track where
     show (Track ar nm al _) =
-        "Artist: " ++ ar ++ "\n" ++
-        "Name: " ++ nm ++ "\n" ++
-        "Album: " ++ al
+        "Artist: " ++ T.unpack ar ++ "\n" ++
+        "Name: " ++ T.unpack nm ++ "\n" ++
+        "Album: " ++ T.unpack al
 
 instance Eq Track where
     (Track artist1 name1 album1 _) == (Track artist2 name2 album2 _) =
@@ -91,5 +96,10 @@ renderStations :: [Station] -> String
 renderStations stations =
     renderRows $ fmap
                    ( \(Station name id) ->
-                         [name, show id]
+                         [T.unpack name, show id]
                    ) stations
+
+getScrapedTracks :: (Monad m, MonadResource m, MonadIO m) => StationID -> ReaderT SqlBackend m [Track]
+getScrapedTracks stationID = do
+    ents <- selectList [TrackStation ==. stationID] []
+    return $ fmap entityVal ents

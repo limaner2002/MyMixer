@@ -120,7 +120,7 @@ instance FromJSON PlaylistTrackObject
 
 data SpotifyTrack = SpotifyTrack
   {
-     trackName :: T.Text,
+     spotifyTrackName :: T.Text,
      artists :: [Artist],
      album :: Album,
      trackUri :: T.Text
@@ -134,8 +134,8 @@ data SpotifyTrack = SpotifyTrack
 
 instance Show SpotifyTrack
   where
-     show (SpotifyTrack trackName artists _ _) = show trackName ++ "\t" ++ (show $ artistName $ head artists)
-     show (LocalTrack _ _ title artist album) = show title ++ "\t" ++ show artist ++ "\t" ++ show album
+     show (SpotifyTrack trackName artists _ _) = (T.unpack $ artistName $ head artists) ++ "\t" ++ T.unpack trackName
+     show (LocalTrack _ _ title artist album) = T.unpack title ++ "\t" ++ T.unpack artist ++ "\t" ++ T.unpack album
 
 instance FromJSON SpotifyTrack
   where
@@ -167,3 +167,11 @@ instance FromJSON Album
      parseJSON (Object o) = Album <$> o .: "name"
 
      parseJSON _ = mzero
+
+data TrackList = TrackList (SpotifyPagingObject SpotifyTrack)
+
+instance FromJSON TrackList
+    where
+      parseJSON (Object o) = TrackList <$>
+                             o .: "tracks"
+      parseJSON _ = mzero
