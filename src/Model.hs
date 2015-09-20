@@ -70,11 +70,6 @@ toFlow tokEntry refreshToken flowEntry =
     where
       tStamp = flowEntryTimestamp flowEntry
 
--- insertFlow :: OAuth2WebServerFlow ->
--- insertFlow flow = do
---   case flowToken flow of
---     Nothing -> 
-
 data OAuth2WebServerFlow = OAuth2WebServerFlow
     { flowToken :: Maybe AccessToken                -- The token used for authorized requests
     , oauth2 :: OAuth2                              -- The app key

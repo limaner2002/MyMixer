@@ -16,11 +16,10 @@ import Model
 import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Control.Monad.Logger (runNoLoggingT)
+import Control.Monad.Logger (runNoLoggingT, runLoggingT)
 
 import Control.Monad.Reader (ReaderT)
 import Database.Persist.Sql (SqlPersistT)
-import Control.Monad.Logger
 import System.Log.FastLogger (fromLogStr)
 import Control.Monad.Trans.Resource (ResourceT)
 import Network.OAuth.OAuth2 (OAuth2Result)
@@ -78,14 +77,22 @@ findTracks = do
   liftIO $ mapM_ (putStrLn . T.unpack . trackUri) tracks
   liftIO $ mapM_ print tracks
 
-getDesiredPlaylists :: Flow ()
+getDesiredPlaylists :: Flow [SimplifiedPlaylistObject]
 getDesiredPlaylists = do
   playlists <- getUserPlaylists
   desired <- selectList [] []
-  let desiredPlaylists = getSourcePlaylists playlists $ fmap entityVal desired
+  return $ getSourcePlaylists playlists $ fmap entityVal desired
+  -- trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
+  -- let tracks = fmap (fmap track) trackObjs
+  -- mapM_ (mapM_ (liftIO . putStrLn . show)) tracks
+
+saveMix :: Flow ()
+saveMix = do
+  desiredPlaylists <- getDesiredPlaylists
   trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
   let tracks = fmap (fmap track) trackObjs
-  mapM_ (mapM_ (liftIO . putStrLn . show)) tracks
+  logInfo "Saving tracks"
+  mapM_ (mapM_ saveSpotifyTrack) tracks
 
 main :: IO ()
 main = do
@@ -104,7 +111,7 @@ main = do
          ( do
              runMigration migrateAll
              runMigration migrateFlow
-             findTracks
+             saveMix
          )
          (createFlow oldFlow curTime mgr)
   res <- fn

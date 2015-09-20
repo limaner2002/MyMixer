@@ -1,10 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module SpotifyTypes where
 
 import Data.Aeson
 import Control.Monad (mzero, void)
 import qualified Data.Text as T
-import Flow (fetchObject)
+
+import Flow (fetchObject, logInfo)
+import Types
 
 data UserObjectPrivate = UserObjectPrivate
   { birthdate :: Maybe T.Text,
@@ -86,27 +90,8 @@ instance (FromJSON a) => FromJSON (SpotifyPagingObject a)
 
     parseJSON _ = mzero
 
--- data FullPlaylistObject = FullPlaylistObject
---   { fullName :: T.Text,
---     fullUri :: T.Text,
---     fullHref :: T.Text,
---     snapshotId :: T.Text,
---     fullTracks :: [Track]
---   }
-
--- instance FromJSON FullPlaylistObject
---   where
---     parseJSON (Object o) = FullPlaylistObject <$>
---                              o .: "name" <*>
---                              o .: "uri" <*>
---                              o .: "href" <*>
---                              o .: "snapshot_id" <*>
---                              o .: "tracks"
---     parseJSON _ = mzero
-
 data PlaylistTrackObject = PlaylistTrackObject
   { addedAt :: T.Text,
---     addedBy :: String,
     track :: SpotifyTrack
   }
 
@@ -114,7 +99,6 @@ instance FromJSON PlaylistTrackObject
   where
     parseJSON (Object o) = PlaylistTrackObject <$>
                              o .: "added_at" <*>
---                           o .: "added_by" <*>
                              o .: "track"
     parseJSON _ = mzero
 
@@ -137,6 +121,43 @@ instance Show SpotifyTrack
      show (SpotifyTrack trackName artists _ _) = (T.unpack $ artistName $ head artists) ++ "\t" ++ T.unpack trackName
      show (LocalTrack _ _ title artist album) = T.unpack title ++ "\t" ++ T.unpack artist ++ "\t" ++ T.unpack album
 
+instance Saveable SpotifyTrack SpotifyTrackEntry where
+    toEntry (SpotifyTrack {..}) =
+        SpotifyTrackEntry
+          { spotifyTrackEntryName = spotifyTrackName
+          , spotifyTrackEntryArtists = Nothing
+          , spotifyTrackEntryAlbum = Nothing
+          , spotifyTrackEntryUri = trackUri
+          }
+
+-- toTrackEntry :: SpotifyTrack -> Maybe SpotifyArtistEntryId -> Maybe SpotifyAlbumEntryId -> SpotifyTrackEntry
+-- toTrackEntry track artistId albumId =
+--     SpotifyTrackEntry u n artistId albumId
+--   where
+--     u = trackUri track
+--     n = spotifyTrackName track
+
+saveSpotifyTrack :: (Monad m, MonadResource m, MonadIO m) => SpotifyTrack -> ReaderT SqlBackend m ()
+saveSpotifyTrack track = do
+  let mainArtist = head $ artists track
+      mainArtistEntry = toEntry mainArtist :: SpotifyArtistEntry
+      albumEntry = toEntry $ album track :: SpotifyAlbumEntry
+      trackEntry = toEntry track :: SpotifyTrackEntry
+
+      artistId = spotifyArtistEntryKey $ artistUri mainArtist
+      albumId = spotifyAlbumEntryKey $ albumUri $ album track
+      trackId = spotifyTrackEntryKey $ trackUri track
+
+  insertNotExists artistId mainArtistEntry
+  insertNotExists albumId albumEntry
+  insertNotExists trackId trackEntry
+              { spotifyTrackEntryArtists = (Just artistId)
+              , spotifyTrackEntryAlbum = (Just albumId)
+              }
+
+  -- insert_ mainArtist
+  -- insert_ albumEntry
+
 instance FromJSON SpotifyTrack
   where
      parseJSON (Object o) = SpotifyTrack <$> o .: "name" <*>
@@ -148,25 +169,45 @@ instance FromJSON SpotifyTrack
 
 data Artist = Artist
   {
-     artistName :: T.Text
+    artistName :: T.Text
+  , artistUri :: T.Text
   } deriving Show
 
 instance FromJSON Artist
   where
-     parseJSON (Object o) = Artist <$> o .: "name"
+     parseJSON (Object o) = Artist <$>
+                            o .: "name" <*>
+                            o .: "uri"
 
      parseJSON _ = mzero
 
+instance Saveable Artist SpotifyArtistEntry where
+    toEntry (Artist {..}) =
+        SpotifyArtistEntry
+        { spotifyArtistEntryName = artistName
+        , spotifyArtistEntryUri = artistUri
+        }
+
 data Album = Album
   {
-     albumName :: T.Text
+    albumName :: T.Text
+  , albumUri :: T.Text
   } deriving Show
 
 instance FromJSON Album
   where
-     parseJSON (Object o) = Album <$> o .: "name"
+     parseJSON (Object o) = Album <$>
+                            o .: "name" <*>
+                            o .: "uri"                            
 
      parseJSON _ = mzero
+
+instance Saveable Album SpotifyAlbumEntry where
+    toEntry (Album {..}) =
+        SpotifyAlbumEntry
+        { spotifyAlbumEntryName = albumName
+        , spotifyAlbumEntryUri = albumUri
+        }
 
 data TrackList = TrackList (SpotifyPagingObject SpotifyTrack)
 

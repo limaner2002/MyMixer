@@ -9,9 +9,24 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Types ( Data.Aeson.decode
              , Track (..)
+             , Saveable (..)
+             , SpotifyAlbumEntry (..)
+             , SpotifyArtistEntry (..)
+             , SpotifyTrackEntry (..)
+             , spotifyTrackEntryKey
+             , spotifyAlbumEntryKey
+             , spotifyArtistEntryKey
              , Database.Persist.Sqlite.runSqlite
              , Database.Persist.Sql.runMigration
              , Database.Persist.Sql.transactionSave
+             , Database.Persist.Sql.SqlBackend
+             , Database.Persist.Sql.toSqlKey
+             , Database.Persist.Sql.fromSqlKey
+             , Database.Persist.Key
+             , Database.Persist.insert
+             , Database.Persist.insert_
+             , Database.Persist.repsert
+             , insertNotExists
              , migrateAll
              , saveTrack
              , getStations
@@ -25,12 +40,16 @@ module Types ( Data.Aeson.decode
              , sourcePlaylistsUuid
              , getScrapedTracks
              , Control.Monad.IO.Class.liftIO
+             , Control.Monad.IO.Class.MonadIO
+             , Control.Monad.Trans.Resource.MonadResource
+             , Control.Monad.Reader.ReaderT
              )where
 
 import Database.Persist.TH
 import Database.Persist.Sql
 import Database.Persist.Sqlite
 import Database.Persist
+import Database.Persist.Quasi
 import Data.Aeson
 import Control.Monad.Trans.Resource
 import Control.Monad.IO.Class
@@ -41,28 +60,17 @@ import qualified Data.Text as T
 
 import Tabular
 
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
-Track
-  artist T.Text
-  name T.Text
-  album T.Text
-  station Int
-Station
-  name T.Text
-  idNum Int
-  Primary idNum
-SourcePlaylists
-  uuid T.Text
-  Primary uuid
-SimplifiedPlaylistEntry
-  name T.Text
-  uri T.Text
-  href T.Text
-|]
+share [mkPersist sqlSettings, mkMigrate "migrateAll"]
+      $(persistFileWith lowerCaseSettings "common/models")
 
 type Scraper = SqlPersistT (NoLoggingT (ResourceT (StateT (Maybe Track) IO)))
 type RPScraper = SqlPersistT (NoLoggingT (ResourceT IO))
 type StationID = Int
+
+class PersistEntity b => Saveable a b where
+    toEntry :: a -> b
+    fromEntry :: b -> a
+--    saveEntry :: (Saveable a b c, Monad m, MonadResource m, MonadIO m) => a -> ReaderT SqlBackend m c
 
 instance FromJSON Track where
     parseJSON (Object o) = Track <$>
@@ -103,3 +111,15 @@ getScrapedTracks :: (Monad m, MonadResource m, MonadIO m) => StationID -> Reader
 getScrapedTracks stationID = do
     ents <- selectList [TrackStation ==. stationID] []
     return $ fmap entityVal ents
+
+spotifyArtistEntryKey = SpotifyArtistEntryKey
+
+spotifyAlbumEntryKey = SpotifyAlbumEntryKey
+
+spotifyTrackEntryKey = SpotifyTrackEntryKey
+
+insertNotExists key val = do
+  res <- Database.Persist.get key
+  case res of
+    Nothing -> insert_ val
+    Just _ -> return ()
