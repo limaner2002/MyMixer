@@ -1,5 +1,5 @@
 flags: {}
 packages:
 - '.'
-extra-deps: []
-resolver: lts-3.5
+extra-deps: [argparser-0.3.4]
+resolver: lts-3.9

@@ -36,3 +36,4 @@ getDBPath dbName = do
   createDirectoryIfMissing True confDir
 
   return $ T.concat [T.pack confDir, "/", dbName]
+

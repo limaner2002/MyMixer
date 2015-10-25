@@ -26,6 +26,9 @@ import Network.OAuth.OAuth2 (OAuth2Result)
 import Control.Monad.IO.Class
 import Data.Maybe (catMaybes)
 
+import Options.Applicative
+
+import Options
 import SpotifyTypes
 import Library
 import Util
@@ -66,12 +69,9 @@ createFlow Nothing curTime mgr =
     , authAccount = "MyMixer"
     }
 
-findTracks :: Flow ()
-findTracks = do
-  liftIO $ putStrLn "Which station do you want to search tracks for?"
-  line <- liftIO $ getLine
-
-  scraped <- getScrapedTracks (read line)
+findTracks :: Int -> Flow ()
+findTracks stationId = do
+  scraped <- getScrapedTracks stationId
   mTracks <- sequence $ fmap findTrack scraped
   let tracks = catMaybes mTracks
   liftIO $ mapM_ (putStrLn . T.unpack . trackUri) tracks
@@ -82,9 +82,6 @@ getDesiredPlaylists = do
   playlists <- getUserPlaylists
   desired <- selectList [] []
   return $ getSourcePlaylists playlists $ fmap entityVal desired
-  -- trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
-  -- let tracks = fmap (fmap track) trackObjs
-  -- mapM_ (mapM_ (liftIO . putStrLn . show)) tracks
 
 saveMix :: Flow ()
 saveMix = do
@@ -94,8 +91,21 @@ saveMix = do
   logInfo "Saving tracks"
   mapM_ (mapM_ saveSpotifyTrack) tracks
 
+dispatch :: Command -> Flow ()
+dispatch (FindTracks stationId) = findTracks stationId
+dispatch DisplayStations = showStations
+
+showStations :: Flow ()
+showStations = do
+  stations <- getStations
+  liftIO $ putStrLn $ renderStations stations
+
+opts :: ParserInfo Command
+opts = info (parseArgs <**> helper) idm
+
 main :: IO ()
 main = do
+  cmd <- execParser opts
   dbPath <- getDBPath "db.sqlite"
 
   mgr <- newManager tlsManagerSettings
@@ -111,7 +121,7 @@ main = do
          ( do
              runMigration migrateAll
              runMigration migrateFlow
-             saveMix
+             dispatch cmd
          )
          (createFlow oldFlow curTime mgr)
   res <- fn
