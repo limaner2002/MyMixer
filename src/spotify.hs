@@ -3,6 +3,7 @@
 
 import System.Environment
 import           Network.HTTP.Conduit
+import Data.Conduit
 import Flow
 import Control.Monad.Trans.State
 import Control.Monad.State (lift)
@@ -25,6 +26,7 @@ import Control.Monad.Trans.Resource (ResourceT)
 import Network.OAuth.OAuth2 (OAuth2Result)
 import Control.Monad.IO.Class
 import Data.Maybe (catMaybes)
+import System.IO
 
 import Options.Applicative
 
@@ -73,27 +75,38 @@ findTracks :: Int -> Flow ()
 findTracks stationId = do
   scraped <- getScrapedTracks stationId
   mTracks <- sequence $ fmap findTrack scraped
+  zune <- testPlaylist
+
   let tracks = catMaybes mTracks
   liftIO $ mapM_ (putStrLn . T.unpack . trackUri) tracks
   liftIO $ mapM_ print tracks
+  addTracks tracks zune
 
-getDesiredPlaylists :: Flow [SimplifiedPlaylistObject]
-getDesiredPlaylists = do
-  playlists <- getUserPlaylists
-  desired <- selectList [] []
-  return $ getSourcePlaylists playlists $ fmap entityVal desired
+-- This is here temporarily for testing purposes only.
+testPlaylist = getPlaylist $
+           newSpotifyUri "spotify:user:limaner2002:playlist:0TeVz0wsIThE32KFkKroIo"   
 
-saveMix :: Flow ()
-saveMix = do
-  desiredPlaylists <- getDesiredPlaylists
-  trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
-  let tracks = fmap (fmap track) trackObjs
-  logInfo "Saving tracks"
-  mapM_ (mapM_ saveSpotifyTrack) tracks
+-- saveMix :: Flow ()
+-- saveMix = do
+--   desiredPlaylists <- getDesiredPlaylists
+--   trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
+--   let tracks = fmap (fmap track) trackObjs
+--   logInfo "Saving tracks"
+--   mapM_ (mapM_ saveSpotifyTrack) tracks
 
 dispatch :: Command -> Flow ()
 dispatch (FindTracks stationId) = findTracks stationId
 dispatch DisplayStations = showStations
+dispatch GetArtists = do
+  sourcePlaylists <- getSourcePlaylists
+  let uris = map sourcePlaylistsUuid sourcePlaylists
+  playlist <- sequence $ map (getPlaylist . newSpotifyUri) uris
+  liftIO $ print playlist
+dispatch GetPlaylistTracks = do
+  playlist <- getPlaylist $ newSpotifyUri "spotify:user:limaner2002:playlist:1mdYP7eSHscQ14O9ERCPHh"
+  pagingSource (trackObjectHref $ tracks playlist)
+                 $$ getPlaylistTracks $= printConsumer
+  return ()
 
 showStations :: Flow ()
 showStations = do
@@ -126,5 +139,5 @@ main = do
          (createFlow oldFlow curTime mgr)
   res <- fn
   case res of
-    Left msg -> putStrLn $ BL.unpack msg
+    Left msg -> hPutStrLn stderr $ BL.unpack msg
     Right val -> return val

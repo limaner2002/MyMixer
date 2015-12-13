@@ -1,0 +1,39 @@
+Track
+  artist T.Text
+  name T.Text
+  album T.Text
+  station Int
+Station
+  name T.Text
+  idNum Int
+  Primary idNum
+SourcePlaylists
+  uuid T.Text
+  Primary uuid
+SimplifiedPlaylistEntry
+  name T.Text
+  uri T.Text
+  href T.Text
+SpotifyTrackEntry
+  uri T.Text
+  name T.Text
+  artists SpotifyArtistEntryId Maybe
+  album SpotifyAlbumEntryId Maybe
+  Primary uri
+  deriving Show
+SpotifyArtistEntry
+  uri T.Text
+  name T.Text
+  Primary uri
+  deriving Show
+SpotifyAlbumEntry
+  uri T.Text
+  name T.Text
+  Primary uri
+  deriving Show
+SpotifyPlaylistEntry
+  uri T.Text
+  name T.Text
+  UniqueSpotifyPlaylistEntry uri
+SpotifySeedArtistEntry
+  uri T.Text

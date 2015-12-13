@@ -39,6 +39,7 @@ module Types ( Data.Aeson.decode
              , SourcePlaylists
              , sourcePlaylistsUuid
              , getScrapedTracks
+             , getSourcePlaylists
              , Control.Monad.IO.Class.liftIO
              , Control.Monad.IO.Class.MonadIO
              , Control.Monad.Trans.Resource.MonadResource
@@ -98,6 +99,11 @@ saveTrack track =
 getStations :: (Monad m, MonadResource m, MonadIO m) => ReaderT SqlBackend m [Station]
 getStations = do
   ents <- selectList [] [Asc StationName]
+  return $ fmap entityVal ents
+
+getSourcePlaylists :: (Monad m, MonadResource m, MonadIO m) => ReaderT SqlBackend m [SourcePlaylists]
+getSourcePlaylists = do
+  ents <- selectList [] []
   return $ fmap entityVal ents
 
 renderStations :: [Station] -> String

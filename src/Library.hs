@@ -9,6 +9,11 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
 import Network.HTTP.Types (urlEncode)
+import Data.Conduit
+import qualified Data.Conduit.Combinators as CC
+import Control.Monad.Trans.Class
+import Control.Monad.IO.Class
+import Data.Aeson (FromJSON, encode)
 
 getCurrentUser :: Flow UserObjectPrivate
 getCurrentUser = do
@@ -25,6 +30,13 @@ getUserPlaylists = do
 
 -- getFullPlaylist :: SimplifiedPlaylistObject -> PlaylistObject
 
+getPlaylist :: SpotifyUri -> Flow SimplifiedPlaylistObject
+getPlaylist (SpotifyUri _ _ uid _ playlistId) = do
+  currentUser <- getCurrentUser
+  let uri = T.concat [base, uid, "/playlists/", playlistId]
+      base = "https://api.spotify.com/v1/users/"
+  fetchObject uri
+
 fetchPagingObjects :: (URI -> Flow (SpotifyPagingObject b)) -> Maybe URI -> Flow [b]
 fetchPagingObjects _ Nothing = return []
 fetchPagingObjects f (Just uri) = do
@@ -34,18 +46,20 @@ fetchPagingObjects f (Just uri) = do
   next <- fetchPagingObjects f (nextURI)
   return $ (items page) `mappend` next
 
-getSourcePlaylists :: [SimplifiedPlaylistObject] -> [SourcePlaylists] -> [SimplifiedPlaylistObject]
-getSourcePlaylists playlists desired =
-    filter (\playlist -> (playlistUri playlist) `elem` desiredUUID) playlists
-  where
-    desiredUUID = fmap sourcePlaylistsUuid desired
+pagingSource :: FromJSON a => URI -> Source Flow a
+pagingSource uri = do
+  page <- lift $ flowGetJSONe uri
+  case nextPage page of
+    Nothing -> CC.yieldMany $ items page
+    Just nextURI -> do
+      CC.yieldMany $ items page
+      pagingSource nextURI
 
-getPlaylistTracks :: SimplifiedPlaylistObject -> Flow [PlaylistTrackObject]
-getPlaylistTracks playlist =
-    fetchPagingObjects fetchObject trackUri
-  where
-    trackUri = Just $ trackObjectHref trackObj
-    trackObj = tracks playlist
+getPlaylistTracks :: Conduit PlaylistTrackObject Flow SpotifyTrack
+getPlaylistTracks = CC.mapM (return . track)
+
+printConsumer :: Show a => Consumer a Flow ()
+printConsumer = CC.mapM_ (liftIO . print)
 
 findTrack :: Track -> Flow (Maybe SpotifyTrack)
 findTrack track = do
@@ -63,3 +77,16 @@ findTrack track = do
    searchURI = T.concat [baseUrl, "q=artist:", textUrlEncode (trackArtist track), "+track:", textUrlEncode (trackName track), "&type=track"]
    notFoundMsg = T.concat ["Could not find track ", trackArtist track, " - ", trackName track, "\nQuery URL: ", searchURI]
    textUrlEncode = T.pack . C8.unpack . (urlEncode False) . C8.pack . T.unpack
+
+addTracks :: [SpotifyTrack] -> SimplifiedPlaylistObject -> Flow ()
+addTracks tracks playlist = do
+    let uri = T.concat [base, uid, "/playlists/", playlistId]
+
+    res <- flowPostBS uri body
+    liftIO $ print res
+  where
+    (SpotifyUri _ _ uid _ playlistId) = newSpotifyUri $ playlistUri playlist
+    base = "https://api.spotify.com/v1/users/"
+    body = [("Body", BL.toStrict $ encode uriList)]
+    uriList = UriList trackUris
+    trackUris = fmap trackUri tracks

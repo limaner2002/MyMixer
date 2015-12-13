@@ -49,9 +49,12 @@ executable spotify
   build-depends:       base
                      , hoauth2
                      , bytestring
+                     , conduit
+                     , conduit-combinators
                      , http-conduit
                      , http-types
                      , mtl
+                     , unordered-containers
                      , aeson
                      , transformers
                      , transformers-compat

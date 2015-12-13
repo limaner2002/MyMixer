@@ -4,11 +4,13 @@
 module SpotifyTypes where
 
 import Data.Aeson
+import qualified Data.HashMap.Lazy as HML
 import Control.Monad (mzero, void)
 import qualified Data.Text as T
 
 import Flow (fetchObject, logInfo)
 import Types
+import Debug.Trace
 
 data UserObjectPrivate = UserObjectPrivate
   { birthdate :: Maybe T.Text,
@@ -91,14 +93,14 @@ instance (FromJSON a) => FromJSON (SpotifyPagingObject a)
     parseJSON _ = mzero
 
 data PlaylistTrackObject = PlaylistTrackObject
-  { addedAt :: T.Text,
+  { addedAt :: Maybe T.Text,
     track :: SpotifyTrack
   }
 
 instance FromJSON PlaylistTrackObject
   where
     parseJSON (Object o) = PlaylistTrackObject <$>
-                             o .: "added_at" <*>
+                             o .:? "added_at" <*>
                              o .: "track"
     parseJSON _ = mzero
 
@@ -167,47 +169,72 @@ instance FromJSON SpotifyTrack
 
      parseJSON _ = mzero
 
-data Artist = Artist
-  {
-    artistName :: T.Text
+data Artist = SpotifyArtist
+  { spotifyArtistName :: T.Text
   , artistUri :: T.Text
-  } deriving Show
+  }
+              | LocalArtist
+  { localArtistName :: T.Text
+  }
+    deriving Show
+
+artistName :: Artist -> T.Text
+artistName (SpotifyArtist name _) = name
+artistName (LocalArtist name) = name
 
 instance FromJSON Artist
   where
-     parseJSON (Object o) = Artist <$>
-                            o .: "name" <*>
-                            o .: "uri"
+     parseJSON (Object o) =
+         case HML.lookup (T.pack "uri") o of
+           Nothing -> LocalArtist <$>
+                          o .: "name"
+           Just Null -> LocalArtist <$>
+                          o .: "name"
+           Just _ -> SpotifyArtist <$>
+                          o .: "name" <*>
+                          o .: "uri"
 
      parseJSON _ = mzero
 
 instance Saveable Artist SpotifyArtistEntry where
-    toEntry (Artist {..}) =
+    toEntry (SpotifyArtist {..}) =
         SpotifyArtistEntry
-        { spotifyArtistEntryName = artistName
+        { spotifyArtistEntryName = spotifyArtistName
         , spotifyArtistEntryUri = artistUri
         }
+    toEntry (LocalArtist {..}) = undefined
 
-data Album = Album
+data Album = SpotifyAlbum
   {
-    albumName :: T.Text
+    spotifyAlbumName :: T.Text
   , albumUri :: T.Text
+  }
+           | LocalAlbum
+  { localAlbumName :: T.Text
   } deriving Show
 
 instance FromJSON Album
   where
-     parseJSON (Object o) = Album <$>
-                            o .: "name" <*>
-                            o .: "uri"                            
+     parseJSON (Object o) =
+       case HML.lookup (T.pack "uri") o of
+           Nothing -> LocalAlbum <$>
+                        o .: "name"
+           Just Null -> LocalAlbum <$>
+                        o .: "name"
+           Just _ ->
+             SpotifyAlbum <$>
+                        o .: "name" <*>
+                        o .: "uri"
 
      parseJSON _ = mzero
 
 instance Saveable Album SpotifyAlbumEntry where
-    toEntry (Album {..}) =
+    toEntry (SpotifyAlbum {..}) =
         SpotifyAlbumEntry
-        { spotifyAlbumEntryName = albumName
+        { spotifyAlbumEntryName = spotifyAlbumName
         , spotifyAlbumEntryUri = albumUri
         }
+    toEntry (LocalAlbum {..}) = undefined
 
 data TrackList = TrackList (SpotifyPagingObject SpotifyTrack)
 
@@ -216,3 +243,27 @@ instance FromJSON TrackList
       parseJSON (Object o) = TrackList <$>
                              o .: "tracks"
       parseJSON _ = mzero
+
+newSpotifyUri txt = SpotifyUri svc typ user object id
+    where
+      [svc, typ, user, object, id] = T.splitOn ":" txt
+
+data SpotifyUri = SpotifyUri
+    { service :: T.Text
+    , spotifyType :: T.Text
+    , uriUser :: T.Text
+    , spotifyObject :: T.Text
+    , spotifyId :: T.Text
+    }
+
+data UriList = UriList [T.Text]
+             deriving Show
+
+instance FromJSON UriList
+    where parseJSON (Object o) =
+              UriList <$>
+              o .: "uris"
+
+instance ToJSON UriList
+    where toJSON (UriList uris) =
+              object ["uris" .= uris]

@@ -2,6 +2,7 @@
 module Flow where
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as C8L
 import qualified Data.Text as T
 import Network.OAuth.OAuth2 hiding (URI)
 import Network.HTTP.Conduit
@@ -12,7 +13,7 @@ import Data.Time
 import System.IO (stderr)
 import Control.Monad.Reader (ReaderT, MonadReader)
 import Database.Persist.Sql (SqlPersistT, SqlBackend)
-import Control.Monad.Logger (NoLoggingT, LoggingT, logInfoN)
+import Control.Monad.Logger (NoLoggingT, LoggingT, logInfoN, logErrorN)
 import Control.Monad.Trans.Resource (ResourceT)
 import qualified Data.Text as T
 import Database.Persist ( insert
@@ -22,7 +23,7 @@ import Database.Persist ( insert
                         , entityVal
                         , Entity
                         )
-
+import Data.Monoid
 import Model
 import Keychain hiding (checkResult)
 
@@ -33,7 +34,12 @@ type URI = T.Text
 repack = C8.pack . T.unpack
 
 throwError = lift . lift . lift . lift . throwE
+
+logInfo :: T.Text -> Flow ()
 logInfo = lift . lift . logInfoN
+
+logError :: T.Text -> Flow ()
+logError = lift . lift . logErrorN
 
 flowGetJSON :: FromJSON a => URI -> Flow (OAuth2Result a)
 flowGetJSON uri = do
@@ -42,12 +48,24 @@ flowGetJSON uri = do
 
   liftIO $ authGetJSON mgr tok (repack uri)
 
-flowGetBS :: URI -> Flow (OAuth2Result BL.ByteString)
+flowGetJSONe :: FromJSON a => URI -> Flow a
+flowGetJSONe uri = do
+  bs <- flowGetBS uri
+  case eitherDecode bs of
+    Left msg ->
+        throwError $ (C8L.pack msg)
+          <> "\n" <> bs
+    Right val -> return val
+
+flowGetBS :: URI -> Flow BL.ByteString
 flowGetBS uri = do
   tok <- checkToken
   mgr <- gets manager
 
-  liftIO $ authGetBS mgr tok (repack uri)
+  res <- liftIO $ authGetBS mgr tok (repack uri)
+  case res of
+    Left msg -> throwError msg
+    Right val -> return val
 
 flowGetBS' :: URI -> Flow (OAuth2Result BL.ByteString)
 flowGetBS' uri = do
@@ -56,8 +74,15 @@ flowGetBS' uri = do
 
   liftIO $ authGetBS' mgr tok $ repack uri
 
-flowPostJSON :: URI -> PostBody -> Flow (OAuth2Result BL.ByteString)
+flowPostJSON :: FromJSON a => URI -> PostBody -> Flow (OAuth2Result a)
 flowPostJSON uri pb = do
+  tok <- checkToken
+  mgr <- gets manager
+
+  liftIO $ authPostJSON mgr tok (repack uri) pb
+
+flowPostBS :: URI -> PostBody -> Flow (OAuth2Result BL.ByteString)
+flowPostBS uri pb = do
   tok <- checkToken
   mgr <- gets manager
 
