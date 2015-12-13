@@ -2,4 +2,6 @@ flags: {}
 packages:
 - '.'
 extra-deps: [argparser-0.3.4]
-resolver: lts-3.11
+extra-include-dirs: 
+resolver: lts-3.18
+

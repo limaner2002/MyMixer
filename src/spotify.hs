@@ -75,12 +75,12 @@ findTracks :: Int -> Flow ()
 findTracks stationId = do
   scraped <- getScrapedTracks stationId
   mTracks <- sequence $ fmap findTrack scraped
-  zune <- testPlaylist
+  -- zune <- testPlaylist
 
   let tracks = catMaybes mTracks
   liftIO $ mapM_ (putStrLn . T.unpack . trackUri) tracks
   liftIO $ mapM_ print tracks
-  addTracks tracks zune
+  -- addTracks tracks zune
 
 -- This is here temporarily for testing purposes only.
 testPlaylist = getPlaylist $

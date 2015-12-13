@@ -98,24 +98,24 @@ checkToken = do
   case flowToken flow of
              Nothing -> do
                logInfo "No valid token found. Requesting new one"
-               getToken
+               tok <- getToken
                flow <- get
                -- insert $ fromFlow flow
-               insertFlow
+               insertFlow tok
                extractMaybe flowToken flow "Invalid token in function 'checkToken'"
              Just tok -> do
                         now <- liftIO getCurrentTime
                         if (diffUTCTime now (timestamp flow)) > 3540
                         then do
                           logInfo "Token has expired, refreshing now"
-                          refreshAuthToken
-                          flow <- get
+                          tok <- refreshAuthToken
                           -- insert $ fromFlow flow
-                          insertFlow
+                          insertFlow tok
+			  flow <- get
                           extractMaybe flowToken flow "checkToken: Token should have refreshed, but it is not here for some reason."
                         else return tok
 
-getToken :: Flow ()
+getToken :: Flow AccessToken
 getToken = do
   flow <- get
   let mgr = manager flow
@@ -127,12 +127,13 @@ getToken = do
   res <- liftIO $ fetchAccessToken mgr key code
   tok <- handleResult res "Could not get token: "
   liftIO $ saveRefreshToken (authService flow) (authAccount flow) (refreshToken tok)
-  curTime <- liftIO getCurrentTime
-  put $ flow { flowToken = Just $ tok
-             , timestamp = curTime
-             }
+  return tok
+  -- curTime <- liftIO getCurrentTime
+  -- put $ flow { flowToken = Just $ tok
+  --            , timestamp = curTime
+  --            }
 
-refreshAuthToken :: Flow ()
+refreshAuthToken :: Flow AccessToken
 refreshAuthToken = do
   flow <- get
   let mgr = manager flow
@@ -142,11 +143,12 @@ refreshAuthToken = do
   rTok <- extractMaybe refreshToken flowToken "Could not refresh token. No refresh token found."
 
   res <- liftIO $ fetchRefreshToken mgr key rTok
-  tok <- handleResult res "Could not refresh token: "
-  curTime <- liftIO getCurrentTime
-  put $ flow { flowToken = Just tok
-             , timestamp = curTime
-             }
+  handleResult res "Could not refresh token: "
+  -- tok <- handleResult res "Could not refresh token: "
+  -- curTime <- liftIO getCurrentTime
+  -- put $ flow { flowToken = Just tok
+  --            , timestamp = curTime
+  --            }
 
 handleResult :: OAuth2Result a -> BL.ByteString -> Flow a
 handleResult (Left hoauthMsg) msg = throwError $ BL.concat [msg, hoauthMsg]
@@ -158,15 +160,26 @@ extractMaybe f x msg = do
     Nothing -> throwError msg
     Just val -> return val
 
-insertFlow :: Flow ()
-insertFlow = do
+insertFlow :: AccessToken -> Flow ()
+insertFlow tok = do
     flow <- get
-    case flowToken flow of
-      Nothing -> insert_ $ fromFlow Nothing flow
-      Just tok -> do
-               let tokId = (AccessTokenEntryKey 1)
-               repsert tokId $ fromToken tok
-               repsert (FlowEntryKey 1) $ fromFlow (Just tokId) flow
+    curTime <- liftIO getCurrentTime
+    let tokId = (AccessTokenEntryKey 1)
+        newFlow = flow { flowToken = Just tok
+	               , timestamp = curTime
+		       }
+    put $ flow { flowToken = Just tok
+	       , timestamp = curTime
+	       }
+    repsert tokId $ fromToken tok
+    repsert (FlowEntryKey 1) $ fromFlow (Just tokId) newFlow
+    -- flow <- get
+    -- case flowToken flow of
+    --   Nothing -> insert_ $ fromFlow Nothing flow
+    --   Just tok -> do
+    --            let tokId = (AccessTokenEntryKey 1)
+    --            repsert tokId $ fromToken tok
+    --            repsert (FlowEntryKey 1) $ fromFlow (Just tokId) flow
 
 retrieveFlow :: MonadIO m => String -> String -> ReaderT SqlBackend m (Maybe OAuth2WebServerFlow)
 retrieveFlow service account = do
