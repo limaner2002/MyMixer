@@ -13,98 +13,17 @@ build-type:          Simple
 -- extra-source-files:  
 cabal-version:       >=1.10
 
-library
-  hs-source-dirs:      common
-  exposed-modules:     Util
-                     , Types
-                     , Options
-  other-modules:       Tabular
-  build-depends:       base
-                     , directory
-                     , text
-                     , aeson
-                     , persistent
-                     , persistent-template
-                     , persistent-sqlite
-                     , resourcet
-                     , transformers
-                     , mtl
-                     , monad-logger
-                     , fast-logger
-                     , time
-                     , bytestring
-                     , optparse-applicative
-  default-language:    Haskell2010
-
 executable spotify
   hs-source-dirs:      src/
   main-is:             spotify.hs
   other-modules:       Flow
-                     , Keychain
-                     , Keys
-                     , Model
-                     , Library
-                     , SpotifyTypes
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2 -fllvm
   build-depends:       base
                      , hoauth2
-                     , bytestring
-                     , conduit
-                     , conduit-combinators
-                     , http-conduit
-                     , http-types
-                     , mtl
-                     , unordered-containers
-                     , aeson
-                     , transformers
-                     , transformers-compat
-                     , time
-                     , directory
-                     , persistent
-                     , persistent-template
-                     , persistent-sqlite
-                     , text
-                     , monad-logger
-                     , fast-logger
-                     , resourcet
-                     , spotify
-                     , optparse-applicative
-                     , enclosed-exceptions
+                     , classy-prelude
   default-language:    Haskell2010
   c-sources:           external/keychain.c
   ld-options:          -framework Security
-
-executable mcScraper
-  hs-source-dirs:      mcScraper/src
-  main-is:     	       scraper.hs
-  build-depends:       base
-                     , http-conduit
-                     , aeson
-                     , bytestring
-                     , resourcet
-                     , transformers
-                     , split
-                     , persistent
-                     , persistent-template
-                     , persistent-sqlite
-                     , text
-                     , mtl
-                     , monad-logger
-                     , spotify
-                     , monad-loops
-                     , time
-                     , stm
-  default-language:    Haskell2010
-
-executable rpScraper
-  hs-source-dirs:      rpScraper/src
-  main-is:     	       main.hs
-  build-depends:       base
-                     , text
-                     , spotify
-                     , html-conduit
-                     , xml-conduit
-  default-language:    Haskell2010
 
 source-repository head
   type:     git
