@@ -27,6 +27,7 @@ import Network.OAuth.OAuth2 (OAuth2Result)
 import Control.Monad.IO.Class
 import Data.Maybe (catMaybes)
 import System.IO
+import Control.Exception.Enclosed
 
 import Options.Applicative
 
@@ -74,13 +75,20 @@ createFlow Nothing curTime mgr =
 findTracks :: Int -> Flow ()
 findTracks stationId = do
   scraped <- getScrapedTracks stationId
-  mTracks <- sequence $ fmap findTrack scraped
+  eTracks <- sequence $ fmap findTrack scraped
   -- zune <- testPlaylist
 
-  let tracks = catMaybes mTracks
-  liftIO $ mapM_ (putStrLn . T.unpack . trackUri) tracks
-  liftIO $ mapM_ print tracks
-  -- addTracks tracks zune
+  mapM_ (liftIO . printFindResults) eTracks
+  liftIO $ withFile "/tmp/found.txt" WriteMode $ \handle ->
+      (mapM_ . mapM_ . mapM_) (\track ->
+                                   hPutStrLn handle $ show track
+                              ) eTracks
+
+  -- -- addTracks tracks zune
+
+printFindResults (Left msg) = print msg
+printFindResults (Right (Just track)) = putStrLn $ T.unpack $ trackUri track
+printFindResults _ = return ()
 
 -- This is here temporarily for testing purposes only.
 testPlaylist = getPlaylist $

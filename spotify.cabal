@@ -69,6 +69,7 @@ executable spotify
                      , resourcet
                      , spotify
                      , optparse-applicative
+                     , enclosed-exceptions
   default-language:    Haskell2010
   c-sources:           external/keychain.c
   ld-options:          -framework Security

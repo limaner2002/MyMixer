@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 import Prelude hiding (readFile)
 import qualified Data.Text as T
-import Text.HTML.DOM (parseLBS, readFile)
+import Text.HTML.DOM (readFile)
 import Text.XML.Cursor (Cursor, content, element, fromDocument,
                         ($//), (&/), ($/))
 import Types

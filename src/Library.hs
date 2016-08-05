@@ -61,17 +61,17 @@ getPlaylistTracks = CC.mapM (return . track)
 printConsumer :: Show a => Consumer a Flow ()
 printConsumer = CC.mapM_ (liftIO . print)
 
-findTrack :: Track -> Flow (Maybe SpotifyTrack)
+findTrack :: Track -> Flow (Either BL.ByteString (Maybe SpotifyTrack))
 findTrack track = do
   res <- flowGetJSON searchURI :: Flow (Either BL.ByteString TrackList)
   case res of
-    Left msg -> throwError msg
+    Left msg -> return $ Left msg
     Right (TrackList trackList) ->
         case items trackList of
           [] -> do
              logInfo notFoundMsg
-             return Nothing
-          tracks -> return $ Just $ head tracks
+             return $ Right Nothing
+          tracks -> return $ Right $ Just $ head tracks
  where
    baseUrl = "https://api.spotify.com/v1/search?"
    searchURI = T.concat [baseUrl, "q=artist:", textUrlEncode (trackArtist track), "+track:", textUrlEncode (trackName track), "&type=track"]
