@@ -8,7 +8,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 import Prelude (scanl)
-import ClassyPrelude
+import ClassyPrelude hiding (replicateM)
+import Control.Monad (replicateM)
 
 import Network.HTTP.Conduit
 import qualified Data.Conduit.Combinators as CC
@@ -198,3 +199,58 @@ getTrackForStation stationId =
             , track ^. TrackSong
             , station ^. TrackStationsSeen
             )
+
+stationTracks :: (MonadIO m, MonadBaseControl IO m) => m [[TrackForStation]]
+stationTracks = mapM (\id -> fmap createTrackForStation <$> getTrackForStation (E.val $ StationKey id)) stations
+
+stationCDFs :: [[TrackForStation]] -> [Map Int TrackForStation]
+stationCDFs = fmap (cdfMapFromList . fmap f)
+    where
+      f t@(TrackForStation _ _ n) = (n, t)
+
+stationList :: [(String, Float, Int)]
+stationList = [("Hit List", 1, 2)
+              , ("Today's Country", 1, 3)
+              , ("Solid Gold Oldies", 1, 4)
+              , ("Classic Rock", 1, 6)
+              , ("Alternative", 1, 14)
+              , ("Adult Alternative", 1, 22)
+              , ("Classic Country", 1, 27)
+              , ("Sounds of the Season", 1, 32)
+              , ("Rock Hits", 1, 35)
+              , ("70s", 1, 36)
+              , ("80s", 1, 38)
+              , ("90s", 1, 39)
+              , ("Country Hits", 1, 40)
+              , ("Rock", 6.35, 44)
+              , ("Pop Country", 1, 47)
+              , ("Y2k", 1, 48)
+              , ("Indie", 1, 117)
+              , ("Lounge", 1, 150)
+              , ("Radio Paradise", 1, 1000)
+              , ("All Things Considered", 1, 1001)
+	      ]
+
+readStation
+  :: (MonadIO m, MonadBaseControl IO m) =>
+     (t, t1, Int) -> m (t1, Map Int TrackForStation)
+readStation (_, prob, id) = do
+  tracks <- fmap createTrackForStation <$> getTrackForStation (E.val $ StationKey id)
+  return (prob, trackProbs tracks)
+
+trackProbs :: [TrackForStation] -> Map Int TrackForStation
+trackProbs tracks = cdfMapFromList $ fmap f tracks
+    where
+      f t@(TrackForStation _ _ n) = (n, t)
+
+stationProbs :: (MonadBaseControl IO m, MonadIO m) => m (Map Float (Map Int TrackForStation))
+stationProbs = do
+  stations <- filter (\(_, x) -> x /= mempty) <$> mapM readStation stationList
+  return $ cdfMapFromList stations
+
+createMix :: Int -> Int -> Int -> IO [TrackForStation]
+createMix stations tracks n = do
+  stProb <- stationProbs
+  let r = fmap concat $ fmap concat $ replicateM n <$> join $ mapM (weightedSampleCDF tracks) <$> weightedSampleCDF stations stProb
+
+  runRVar r DevURandom
