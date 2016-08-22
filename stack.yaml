@@ -6,8 +6,9 @@ resolver: lts-6.10
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-- location: ../hsConfig/
-  extra-dep: true
+- location:
+    git: https://github.com/limaner2002/hs-config.git
+    commit: c8f6c750c260eb04801e85ee44510ae33588aa27
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps: []
