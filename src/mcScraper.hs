@@ -428,8 +428,10 @@ findTracks = go
         mapM_ (\(E.Value mUri) -> dispUri mUri) uris
 
       f mgr (TrackForStation (track, _, trackId)) = do
-        req <- searchRequest track
-        runResourceT $ findTrack mgr req track trackId
+        eReq <- runExceptionT $ searchRequest track
+        case eReq of
+          Left msg -> print msg
+          Right req -> runResourceT $ findTrack mgr req track trackId
 
       trackIds = fmap (\(TrackForStation (_, _, trackId)) -> trackId)
 
