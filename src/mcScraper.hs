@@ -56,6 +56,7 @@ Track
     artist Text
     song Text
     album Text
+    uri Text Maybe
     deriving Show
 Station
     stationId Int
@@ -85,7 +86,7 @@ instance (Traversable t, FromJSON a, FromJSON (t a)) => FromJSON (PagingObject t
     parseJSON (Object o) = PagingObject <$> o .: "items"
 
 instance Eq Track where
-    (Track a1 s1 al1) == (Track a2 s2 al2) =
+    (Track a1 s1 al1 _) == (Track a2 s2 al2 _) =
         a1  == a2
      && s1  == s2
      && al1 == al2
@@ -94,6 +95,7 @@ instance FromJSON Track where
     parseJSON (Object o) = Track <$> artists
                                  <*> o .: "name"
                                  <*> album
+                                 <*> o .:? "uri"
         where
           artists = artistText <$> headEx <$> (o .: "artists" :: Parser [Artist])
           album = albumText <$> o .: "album"
@@ -109,11 +111,12 @@ instance FromJSON MCTrack where
           track = Track <$> o .: "Line1"
                         <*> o .: "Line2"
                         <*> o .: "Line3"
+                        <*> pure Nothing
           ttl = o .: "TimeToLive"
           tuple = (,) <$> track <*> ttl
 
 pprintTrack :: Track -> Text
-pprintTrack (Track artist song album) =
+pprintTrack (Track artist song album _) =
     "Artist: " <> artist <> "\n" <>
     "Track: " <> song <> "\n" <>
     "Album: " <> album <> "\n"
@@ -196,21 +199,21 @@ main = do
 stations :: [Int]
 stations = [44,3,117,2,4,6,14,22,27,32,35,36,38,39,40,47,48,150]
 
-data TrackForStation = TrackForStation Text Text Int
-  deriving (Show, Eq, Ord)
+newtype TrackForStation = TrackForStation (Track, Int)
+  deriving (Show, Eq)
 
-createTrackForStation :: (E.Value Text, E.Value Text, E.Value Int) -> TrackForStation
-createTrackForStation (E.Value artist, E.Value song, E.Value seen) = TrackForStation artist song seen
+createTrackForStation :: (E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int) -> TrackForStation
+createTrackForStation (E.Value artist, E.Value song, E.Value album, E.Value uri, E.Value seen) = TrackForStation (Track artist song album uri, seen)
 
 addTrack :: TrackForStation -> TrackForStation -> TrackForStation
-addTrack (TrackForStation _ _ a) (TrackForStation artist song b) = TrackForStation artist song (a + b)
+addTrack (TrackForStation (_, a)) (TrackForStation (track, b)) = TrackForStation (track, (a + b))
 
 tracksCDF :: [TrackForStation] -> Map Int TrackForStation
 tracksCDF [] = mempty
 tracksCDF (track:tracks) = cdfMapFromList $ fmap (\t -> (f t, t)) cdf
     where
       cdf = scanl addTrack track tracks
-      f (TrackForStation _ _ n) = n
+      f (TrackForStation (_, n)) = n
 
 weightedChoices :: (Num w, Ord w, Distribution Uniform w, Excludable w, Applicative t, Monoid (t a), Eq a, Semigroup (t a))
                 => Map w a
@@ -232,7 +235,7 @@ getSamples cdfM n = runRVar (weightedChoices cdfM n) DevRandom
 getTrackForStation
   :: (MonadIO m, MonadBaseControl IO m)
      => E.SqlExpr (E.Value (Key Station))
-     -> m [(E.Value Text, E.Value Text, E.Value Int)]
+     -> m [(E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int)]
 getTrackForStation stationId =
     runSqlite dbLocation
       $ E.select
@@ -242,6 +245,8 @@ getTrackForStation stationId =
           return
             ( track ^. TrackArtist
             , track ^. TrackSong
+            , track ^. TrackAlbum
+            , track ^. TrackUri
             , station ^. TrackStationsSeen
             )
 
@@ -276,7 +281,7 @@ stationTracks = mapM (\id -> fmap createTrackForStation <$> getTrackForStation (
 stationCDFs :: [[TrackForStation]] -> [Map Int TrackForStation]
 stationCDFs = fmap (cdfMapFromList . fmap f)
     where
-      f t@(TrackForStation _ _ n) = (n, t)
+      f t@(TrackForStation (_, n)) = (n, t)
 
 stationList :: [(String, Float, Int)]
 stationList = [("Hit List", 1, 2)
@@ -311,7 +316,7 @@ readStation (_, prob, id) = do
 trackProbs :: [TrackForStation] -> Map Int TrackForStation
 trackProbs tracks = cdfMapFromList $ fmap f tracks
     where
-      f t@(TrackForStation _ _ n) = (n, t)
+      f t@(TrackForStation (_, n)) = (n, t)
 
 stationProbs :: (MonadBaseControl IO m, MonadIO m) => m (Map Float (Map Int TrackForStation))
 stationProbs = do
@@ -345,7 +350,7 @@ consumeMatch target = CC.mapM_ handleIt
       handleIt (Right match) = handleMatch match
       handleMatch Nothing = print "The search term did not return any results."
       handleMatch (Just (track, diff))
-                  | diff == 0 = putStrLn $ "I found your track! " <> pprintTrack track
+                  | diff == 0 = return ()
                   | otherwise = putStrLn $ "This is the closest I could find:\n"
                                      <> pprintTrack track
                                      <> "\nYou searched for\n\n"
@@ -357,14 +362,14 @@ findTrack manager request track = do
   responseBody response $$+- conduitParser json =$ decodeTrackSearch =$ CC.map (fmap (getClosestMatch track)) =$ consumeMatch track
 
 searchRequest :: MonadThrow m => Track -> m Request
-searchRequest (Track artist name _) = parseRequest $ unpack $ searchBaseURL <> "artist:" <> artist <> "+track:" <> name <> "&type=track"
+searchRequest (Track artist name _ _) = parseRequest $ unpack $ searchBaseURL <> "artist:" <> artist <> "+track:" <> name <> "&type=track"
 
 instance Diffable Track where
     closestMatch target results = minimumByMay diffMin differenceList
         where
           resultParts = fmap diffParts results
           targetParts = diffParts target
-          diffParts (Track artist song _) = [unpack (toLower artist), unpack (toLower song)]
+          diffParts (Track artist song _ _) = [unpack (toLower artist), unpack (toLower song)]
           differenceList = zip results $ fmap (diff targetParts) resultParts
           diffMin (_, a) (_, b) = compare a b
 
