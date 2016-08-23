@@ -9,6 +9,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Prelude (scanl)
 import ClassyPrelude hiding (replicateM)
@@ -38,6 +39,7 @@ import Data.Random
 import Data.Random.Distribution.Uniform.Exclusive
 
 import Util
+import System.IO (hFlush)
 
 newtype Artist = Artist Text
     deriving Show
@@ -116,10 +118,11 @@ instance FromJSON MCTrack where
           tuple = (,) <$> track <*> ttl
 
 pprintTrack :: Track -> Text
-pprintTrack (Track artist song album _) =
+pprintTrack (Track artist song album uri) =
     "Artist: " <> artist <> "\n" <>
     "Track: " <> song <> "\n" <>
-    "Album: " <> album <> "\n"
+    "Album: " <> album <> "\n" <>
+    "Uri: "   <> tshow uri <> "\n"
 
 decodeTrack :: MonadResource m => ConduitM ByteString (Either Text MCTrack) m ()
 decodeTrack = CC.map (\str -> case decode $ fromStrict str of
@@ -167,6 +170,25 @@ mainLoop trackQ request manager stationID = go Nothing
 
         go newTrack
 
+-- An attempt to create a source that yields tracks, but it didn't
+-- exactly work. Some more thought will be needed to get this to work
+-- properly if at all. Possibly not even needed.
+-- mcDelay :: MonadResource m => ConduitM (Either Text MCTrack) o m ()
+-- mcDelay = CC.mapM_ (mapM_ doDelay)
+--     where
+--       doDelay (MCTrack (_, ttl)) = threadDelay $ ttl * 1000
+
+-- scraperSource :: MonadResource m => Request -> Manager -> Sink ByteString m b -> m b
+-- scraperSource request manager sink = do
+--     response <- http request manager
+--     responseBody response $$+- sink
+
+-- testMain :: IO ()
+-- testMain = do
+--   req <- parseRequest $ baseURL <> "44"
+--   mgr <- newManager tlsManagerSettings
+--   runResourceT $ scraperSource req mgr (decodeTrack =$ passthroughSink CC.print (\_ -> return ()) =$ mcDelay)
+
 addToDB :: (MonadResource m, MonadResourceBase m) => TQueue (Track,StationId) -> ReaderT SqlBackend m ()
 addToDB trackQ = forever $ do
   (track, stationId) <- atomically $ readTQueue trackQ
@@ -199,21 +221,21 @@ main = do
 stations :: [Int]
 stations = [44,3,117,2,4,6,14,22,27,32,35,36,38,39,40,47,48,150]
 
-newtype TrackForStation = TrackForStation (Track, Int)
+newtype TrackForStation = TrackForStation (Track, Int, Key Track)
   deriving (Show, Eq)
 
-createTrackForStation :: (E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int) -> TrackForStation
-createTrackForStation (E.Value artist, E.Value song, E.Value album, E.Value uri, E.Value seen) = TrackForStation (Track artist song album uri, seen)
+createTrackForStation :: (E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int, E.Value (Key Track)) -> TrackForStation
+createTrackForStation (E.Value artist, E.Value song, E.Value album, E.Value uri, E.Value seen, E.Value trackId) = TrackForStation (Track artist song album uri, seen, trackId)
 
 addTrack :: TrackForStation -> TrackForStation -> TrackForStation
-addTrack (TrackForStation (_, a)) (TrackForStation (track, b)) = TrackForStation (track, (a + b))
+addTrack (TrackForStation (_, a, _)) (TrackForStation (track, b, tId)) = TrackForStation (track, (a + b), tId)
 
 tracksCDF :: [TrackForStation] -> Map Int TrackForStation
 tracksCDF [] = mempty
 tracksCDF (track:tracks) = cdfMapFromList $ fmap (\t -> (f t, t)) cdf
     where
       cdf = scanl addTrack track tracks
-      f (TrackForStation (_, n)) = n
+      f (TrackForStation (_, n, _)) = n
 
 weightedChoices :: (Num w, Ord w, Distribution Uniform w, Excludable w, Applicative t, Monoid (t a), Eq a, Semigroup (t a))
                 => Map w a
@@ -235,7 +257,7 @@ getSamples cdfM n = runRVar (weightedChoices cdfM n) DevRandom
 getTrackForStation
   :: (MonadIO m, MonadBaseControl IO m)
      => E.SqlExpr (E.Value (Key Station))
-     -> m [(E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int)]
+     -> m [(E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int, E.Value (Key Track))]
 getTrackForStation stationId =
     runSqlite dbLocation
       $ E.select
@@ -248,6 +270,7 @@ getTrackForStation stationId =
             , track ^. TrackAlbum
             , track ^. TrackUri
             , station ^. TrackStationsSeen
+            , track ^. TrackId
             )
 
 getTrackEntry
@@ -267,13 +290,23 @@ getTrackEntry track stationId =
         , station ^. TrackStationsStation
         )
 
-updateStationSeen
-  :: MonadIO m =>
-     E.Value (Key Track) -> E.Value (Key Station) -> SqlPersistT m ()
+getTracksFromIds l =
+    E.select $
+    E.from $ \track -> do
+      E.where_ (E.in_ (track ^. TrackId) (E.valList l))
+      return ( track ^. TrackUri )
+
+updateStationSeen :: MonadIO m => E.Value (Key Track) -> E.Value (Key Station) -> SqlPersistT m ()
 updateStationSeen (E.Value trackKey) (E.Value stationKey) =
     E.update $ \station -> do
       E.set station [TrackStationsSeen E.+=. E.val 1]
       E.where_ (station ^. TrackStationsTrack E.==. (E.val trackKey) E.&&. station ^. TrackStationsStation E.==. (E.val stationKey))
+
+updateTrackUri :: MonadIO m => Key Track -> Maybe Text -> SqlPersistT m ()
+updateTrackUri trackKey trackUri =
+    E.update $ \track -> do
+      E.set track [TrackUri E.=. (E.val trackUri)]
+      E.where_ (track ^. TrackId E.==. (E.val trackKey))
 
 stationTracks :: (MonadIO m, MonadBaseControl IO m) => m [[TrackForStation]]
 stationTracks = mapM (\id -> fmap createTrackForStation <$> getTrackForStation (E.val $ StationKey id)) stations
@@ -281,7 +314,7 @@ stationTracks = mapM (\id -> fmap createTrackForStation <$> getTrackForStation (
 stationCDFs :: [[TrackForStation]] -> [Map Int TrackForStation]
 stationCDFs = fmap (cdfMapFromList . fmap f)
     where
-      f t@(TrackForStation (_, n)) = (n, t)
+      f t@(TrackForStation (_, n, _)) = (n, t)
 
 stationList :: [(String, Float, Int)]
 stationList = [("Hit List", 1, 2)
@@ -316,7 +349,7 @@ readStation (_, prob, id) = do
 trackProbs :: [TrackForStation] -> Map Int TrackForStation
 trackProbs tracks = cdfMapFromList $ fmap f tracks
     where
-      f t@(TrackForStation (_, n)) = (n, t)
+      f t@(TrackForStation (_, n, _)) = (n, t)
 
 stationProbs :: (MonadBaseControl IO m, MonadIO m) => m (Map Float (Map Int TrackForStation))
 stationProbs = do
@@ -343,23 +376,65 @@ decodeTrackSearch = CC.map (\(_, x) -> case fromJSON x of
 getClosestMatch :: Track -> TrackSearch [] Track -> Maybe (Track, Int)
 getClosestMatch target (TrackSearch (PagingObject l)) = closestMatch target l
 
-consumeMatch :: MonadResource m => Track -> ConduitM (Either Text (Maybe (Track, Int))) o m ()
-consumeMatch target = CC.mapM_ handleIt
+consumeMatch :: (MonadBaseControl IO m, MonadResource m) => Track -> Key Track -> ConduitM (Either Text (Maybe (Track, Int))) o m ()
+consumeMatch target trackId = CC.mapM_ handleIt
     where
       handleIt (Left msg) = print msg
       handleIt (Right match) = handleMatch match
-      handleMatch Nothing = print "The search term did not return any results."
+      handleMatch Nothing = do
+        putStrLn $ "Your search for:\n" <> pprintTrack target <> "\n did not return any results."
+        askPaste
       handleMatch (Just (track, diff))
-                  | diff == 0 = return ()
-                  | otherwise = putStrLn $ "This is the closest I could find:\n"
+                  | diff == 0 = updateUri (trackUri track)
+                  | otherwise = do
+                       putStrLn $ "This is the closest I could find:\n"
                                      <> pprintTrack track
                                      <> "\nYou searched for\n\n"
                                      <> pprintTrack target
+                       putStr "Is this correct? (Y/N): "
+                       yesOrNo (updateUri (trackUri track)) askPaste
+      updateUri uri = runSqlite dbLocation $ updateTrackUri trackId uri
+      askPaste = putStr "Would you like to paste the URI here? (Y/N): " >> yesOrNo pasteUri (return ())
+      pasteUri = do
+        pastedUri <- getLine
+        putStrLn pastedUri
+        updateUri (Just pastedUri)
 
-findTrack :: (MonadResource m, MonadResourceBase m) => Manager -> Request -> Track -> m ()
-findTrack manager request track = do
-  response <- http request manager
-  responseBody response $$+- conduitParser json =$ decodeTrackSearch =$ CC.map (fmap (getClosestMatch track)) =$ consumeMatch track
+      yesOrNo f g = do
+        (answer :: Text) <- getLine
+        case answer of
+          "Y" -> f
+          "N" -> g
+          _ -> putStrLn "I don't understand that answer. Please enter only Y/N" >> yesOrNo f g
+
+
+findTrack :: (MonadResource m, MonadResourceBase m) => Manager -> Request -> Track -> Key Track -> m ()
+findTrack manager request track trackId = do
+  case trackUri track of
+    Nothing -> do
+      response <- http request manager
+      responseBody response $$+- conduitParser json =$ decodeTrackSearch =$ CC.map (fmap (getClosestMatch track)) =$ consumeMatch track trackId
+    Just uri -> putStrLn "This track has already been found and I don't need to search for it!"
+
+findTracks :: IO ()
+findTracks = go
+    where
+      go = do
+        mgr <- newManager tlsManagerSettings
+        tracks <- createMix 5 2 10
+        mapM_ (f mgr) tracks
+
+        uris <- runSqlite dbLocation $ getTracksFromIds $ trackIds tracks
+        mapM_ (\(E.Value mUri) -> dispUri mUri) uris
+
+      f mgr (TrackForStation (track, _, trackId)) = do
+        req <- searchRequest track
+        runResourceT $ findTrack mgr req track trackId
+
+      trackIds = fmap (\(TrackForStation (_, _, trackId)) -> trackId)
+
+      dispUri Nothing = return ()
+      dispUri (Just uri) = putStrLn uri
 
 searchRequest :: MonadThrow m => Track -> m Request
 searchRequest (Track artist name _ _) = parseRequest $ unpack $ searchBaseURL <> "artist:" <> artist <> "+track:" <> name <> "&type=track"
