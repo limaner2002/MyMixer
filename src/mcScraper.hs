@@ -59,6 +59,7 @@ Track
     song Text
     album Text
     uri Text Maybe
+    TrackName artist song
     deriving Show
 Station
     stationId Int
@@ -70,6 +71,7 @@ TrackStations
     station StationId
     seen Int
     Primary track station
+    TrackStationsUnique track station
     deriving Show
 |]
 
@@ -192,15 +194,27 @@ mainLoop trackQ request manager stationID = go Nothing
 addToDB :: (MonadResource m, MonadResourceBase m) => TQueue (Track,StationId) -> ReaderT SqlBackend m ()
 addToDB trackQ = forever $ do
   (track, stationId) <- atomically $ readTQueue trackQ
-  entryL <- getTrackEntry track stationId
-  case entryL of
-    [] -> do
-        tId <- insert track
-        insert_ $ TrackStations tId stationId 1
-    entries -> mapM_ (uncurry updateStationSeen) entries
+  putStrLn $ pprintTrack track
+
+  addToDB' track stationId
+
+addToDB' track stationId = do
+  tId <- insertUnique' track
+  _ <- upsert (TrackStations tId stationId 1) [TrackStationsSeen +=. 1]
 
   transactionSave
-  putStrLn $ pprintTrack track
+
+-- Only inserts if the record does not exist. In the case that the
+-- record exists, the key of the record is returned.
+insertUnique' datum = do
+  r <- checkUnique datum
+  case r of
+    Nothing -> insert datum
+    Just uniqueVal -> do
+           r' <- getBy uniqueVal
+           case r' of
+             Nothing -> error "Something went horribly wrong in the insertUnique' function"
+             Just entity -> return $ entityKey entity
 
 main :: IO ()
 main = do
@@ -296,8 +310,8 @@ getTracksFromIds l =
       E.where_ (E.in_ (track ^. TrackId) (E.valList l))
       return ( track ^. TrackUri )
 
-updateStationSeen :: MonadIO m => E.Value (Key Track) -> E.Value (Key Station) -> SqlPersistT m ()
-updateStationSeen (E.Value trackKey) (E.Value stationKey) =
+updateStationSeen :: MonadIO m => Key Track -> Key Station -> SqlPersistT m ()
+updateStationSeen trackKey stationKey =
     E.update $ \station -> do
       E.set station [TrackStationsSeen E.+=. E.val 1]
       E.where_ (station ^. TrackStationsTrack E.==. (E.val trackKey) E.&&. station ^. TrackStationsStation E.==. (E.val stationKey))
