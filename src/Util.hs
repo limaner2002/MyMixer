@@ -33,3 +33,9 @@ class Diffable a where
 --     where
 --       differenceList = fmap (editDifference target) results
 --       minDiff (_, a) (_, b) = compare a b
+
+diff :: [String] -> [String] -> Int
+diff targetParts resultParts = foldl' (+) 0 diffs
+    where
+      diffs = fmap diff $ zip targetParts resultParts
+      diff (target, result) = editDifference target result
