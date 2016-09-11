@@ -22,6 +22,10 @@ import Database.Persist.Sqlite
 import Database.Persist
 import Data.Aeson
 import Data.Aeson.Types
+import Transient.Base (TransIO (..), keep')
+import Control.Monad.Trans.Resource
+import Control.Monad.Base
+import Control.Monad.Trans.Control
 
 newtype Artist = Artist Text
     deriving Show
@@ -106,3 +110,25 @@ pprintTrack (Track artist song album uri) =
     "Track: " <> song <> "\n" <>
     "Album: " <> album <> "\n" <>
     "Uri: "   <> tshow uri <> "\n"
+
+dbLocation :: Text
+dbLocation = "/Users/josh/Library/Application Support/Me/MyMixer/newDB.sqlite"
+-- dbLocation = "/tmp/testDB.sqlite"
+
+addToDB :: MonadIO m => Track -> Key Station -> ReaderT SqlBackend m ()
+addToDB track stationId = do
+  tId <- insertUnique' track
+  _ <- upsert (TrackStations tId stationId 1) [TrackStationsSeen +=. 1]
+
+  transactionSave
+
+instance MonadThrow TransIO where
+  throwM = liftIO . throwM
+
+instance MonadBaseControl IO TransIO where
+  type StM TransIO a = a
+  liftBaseWith f = liftIO $ f keep'
+  restoreM = return
+
+instance MonadBase IO TransIO where
+  liftBase = liftIO

@@ -187,8 +187,6 @@ readStation (_, prob, id) = do
 createTrackForStation :: (E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int, E.Value (Key Track)) -> TrackForStation
 createTrackForStation (E.Value artist, E.Value song, E.Value album, E.Value uri, E.Value seen, E.Value trackId) = TrackForStation (Track artist song album uri, seen, trackId)
 
-dbLocation = "/Users/josh/Library/Application Support/Me/MyMixer/newDB.sqlite"
-
 searchBaseURL = "https://api.spotify.com/v1/search?q="
 
 getTracksFromIds l =

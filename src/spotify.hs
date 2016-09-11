@@ -6,14 +6,12 @@
 import ClassyPrelude
 import Prelude ()
 import Transient.Base
-import qualified Transient.Base as TB
-import Control.Monad.Trans.Resource
-import Control.Monad.Base
-import Control.Monad.Trans.Control
 import Database.Persist.Sqlite
+import Control.Monad.Base
 
 import McScraper
 import Mixer
+import Core (dbLocation)
 
 data CommandOptions
     = Mc
@@ -29,17 +27,6 @@ main = keep $ do
     Mc -> mcScraper
     Mix -> runSqlite dbLocation $ findTracks
     Test -> oneThread testFcn
-
-instance MonadThrow TransIO where
-  throwM = liftIO . throwM
-
-instance MonadBaseControl IO TransIO where
-  type StM TransIO a = a
-  liftBaseWith f = liftIO $ f keep'
-  restoreM = return
-
-instance MonadBase IO TransIO where
-  liftBase = liftIO
 
 testFcn :: (MonadIO m, MonadBase IO m) => m ()
 testFcn = do
