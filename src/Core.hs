@@ -118,7 +118,7 @@ dbLocation = "/Users/josh/Library/Application Support/Me/MyMixer/newDB.sqlite"
 addToDB :: MonadIO m => Track -> Key Station -> ReaderT SqlBackend m ()
 addToDB track stationId = do
   tId <- insertUnique' track
-  _ <- upsert (TrackStations tId stationId 1) [TrackStationsSeen +=. 1]
+  _ <- upsert (TrackStations tId stationId 0) [TrackStationsSeen +=. 1]
 
   transactionSave
 

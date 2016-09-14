@@ -45,16 +45,16 @@ saveStationTrack var = do
     putStrLn $ pprintTrack track
 
     runSqlite dbLocation $ addToDB track stationId
-    
-       
 
 getTrackStation :: Manager -> EVar (Track, Key Station) -> Key Station -> TransIO ()
 getTrackStation mgr var stationId = do
-  track <- iterateEvents' (getTrack mgr (baseURL <> show (unStationKey stationId))) 0
-  writeEVar var (track, stationId)
+  mTrack <- iterateEvents' (getTrack mgr (baseURL <> show (unStationKey stationId))) (0, Nothing)
+  case mTrack of
+    Just track -> writeEVar var (track, stationId)
+    Nothing -> return ()
 
-getTrack :: Manager -> String -> Int -> IO (Track, Int)
-getTrack mgr url delay = do
+getTrack :: Manager -> String -> (Int, Maybe Track) -> IO (Maybe Track, (Int, Maybe Track))
+getTrack mgr url (delay, mOldTrack) = do
   threadDelay (delay * 1000)
   mVal <- worker mgr url
   case mVal of
@@ -62,7 +62,13 @@ getTrack mgr url delay = do
     Just val ->
         case val of
           Left msg -> error $ unpack msg
-          Right (MCTrack tup) -> return tup
+          Right (MCTrack tup@(track, delay)) -> do
+                   case mOldTrack of
+                     Nothing -> return (Just track, (delay, Just track))
+                     Just oldTrack ->
+                         case oldTrack == track of
+                           True -> return (Nothing, (delay, Just track))
+                           False -> return $ (Just track, (delay, Just track))
 
 mul :: Int
 mul = truncate 1e6
