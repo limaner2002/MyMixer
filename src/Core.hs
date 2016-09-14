@@ -43,7 +43,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 Track
     artist Text
     song Text
-    album Text
+    album Text Maybe
     uri Text Maybe
     TrackName artist song
     deriving Show
@@ -84,7 +84,7 @@ instance Eq Track where
 instance FromJSON Track where
     parseJSON (Object o) = Track <$> artists
                                  <*> o .: "name"
-                                 <*> album
+                                 <*> (Just <$> album)
                                  <*> o .:? "uri"
         where
           artists = artistText <$> headEx <$> (o .: "artists" :: Parser [Artist])
@@ -108,7 +108,7 @@ pprintTrack :: Track -> Text
 pprintTrack (Track artist song album uri) =
     "Artist: " <> artist <> "\n" <>
     "Track: " <> song <> "\n" <>
-    "Album: " <> album <> "\n" <>
+    "Album: " <> tshow album <> "\n" <>
     "Uri: "   <> tshow uri <> "\n"
 
 dbLocation :: Text

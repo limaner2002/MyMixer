@@ -184,7 +184,7 @@ readStation (_, prob, id) = do
   tracks <- fmap createTrackForStation <$> getTrackForStation (E.val $ StationKey id)
   return (prob, trackProbs tracks)
 
-createTrackForStation :: (E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int, E.Value (Key Track)) -> TrackForStation
+createTrackForStation :: (E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value (Maybe Text), E.Value Int, E.Value (Key Track)) -> TrackForStation
 createTrackForStation (E.Value artist, E.Value song, E.Value album, E.Value uri, E.Value seen, E.Value trackId) = TrackForStation (Track artist song album uri, seen, trackId)
 
 searchBaseURL = "https://api.spotify.com/v1/search?q="
@@ -207,7 +207,7 @@ updateTrackUri trackKey trackUri =
 getTrackForStation
   :: (MonadIO m, MonadBaseControl IO m)
      => E.SqlExpr (E.Value (Key Station))
-     -> m [(E.Value Text, E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value Int, E.Value (Key Track))]
+     -> m [(E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value (Maybe Text), E.Value Int, E.Value (Key Track))]
 getTrackForStation stationId =
     runSqlite dbLocation
       $ E.select

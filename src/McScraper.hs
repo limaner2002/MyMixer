@@ -30,7 +30,6 @@ mcScraper :: TransIO ()
 mcScraper = do
   mgr <- liftIO $ newManager tlsManagerSettings
   var <- newEVar
-  liftIO $ runSqlite dbLocation $ runMigration migrateAll
 
   -- (track, stationId) <- foldr (<|>) empty $ fmap (getTrackStation mgr . StationKey) [44, 3]
   scrapeStations mgr var <|> (threads 1 $ saveStationTrack var)
