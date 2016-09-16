@@ -39,6 +39,8 @@ main = keep $ do
     Test -> oneThread testFcn
     Migrate -> liftIO $ runSqlite dbLocation $ runMigration migrateAll
 
+-- main = runSqlite dbLocation findTracks
+
 testFcn :: (MonadIO m, MonadBase IO m) => m ()
 testFcn = do
   answer <- liftBase $ keep $ input (const True) "Yes" <|> input (const True) "No"

@@ -18,12 +18,7 @@ import Core
 
 rpScraper :: TransIO ()
 rpScraper = do
-  r <- liftIO $ runX $ (readDocument [withValidate no, withParseHTML yes, withWarnings no] "/tmp/rp.html" //> hasName "table")
-        >>. (take 1 . drop 3)
-        /> hasName "tr"
-        /> hasName "td"
-        /> hasName "a"
-        /> getText
+  r <- liftIO $ getTracks
   let tracks = fmap createTrack $ chunksOf 3 $ fmap pack r
   liftIO $ runSqlite dbLocation $ mapM_ (\x -> addToDB x (StationKey 1000)) tracks
   putStrLn $ "Scraped " <> tshow (length tracks) <> " tracks from \"Radio Paradise.\""
@@ -31,3 +26,13 @@ rpScraper = do
 createTrack :: [Text] -> Track
 createTrack [artist, name, album] = Track artist name (Just album) Nothing
 createTrack _ = error "Incorrect input"
+
+getTracks =
+  runX $ (readDocument [withValidate no, withParseHTML yes, withHTTP mempty] rpURL //> hasName "table")
+        >>. (take 1 . drop 3)
+        /> hasName "tr"
+        /> hasName "td"
+        /> hasName "a"
+        /> getText
+
+rpURL = "http://www.radioparadise.com/rp2-content.php?name=Playlist&more=true"
