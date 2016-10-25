@@ -21,8 +21,6 @@ import Database.Persist.Sql
 import Database.Persist.Sqlite
 import qualified Database.Esqueleto as E
 import Database.Esqueleto ((^.))
-import Transient.Base
-import Control.Monad.Base
 
 import Data.Conduit
 import Data.Conduit.Attoparsec
@@ -155,27 +153,29 @@ stationProbs = do
   return $ cdfMapFromList stations
 
 stationList :: [(String, Float, Int)]
-stationList = [("Hit List", 1, 2)
-              , ("Today's Country", 1, 3)
-              , ("Solid Gold Oldies", 1, 4)
-              , ("Classic Rock", 1, 6)
-              , ("Alternative", 1, 14)
-              , ("Adult Alternative", 1, 22)
-              , ("Classic Country", 1, 27)
-              , ("Sounds of the Season", 1, 32)
-              , ("Rock Hits", 1, 35)
-              , ("70s", 1, 36)
-              , ("80s", 1, 38)
-              , ("90s", 1, 39)
-              , ("Country Hits", 1, 40)
-              , ("Rock", 6.35, 44)
-              , ("Pop Country", 1, 47)
-              , ("Y2k", 1, 48)
-              , ("Indie", 1, 117)
-              , ("Lounge", 1, 150)
-              , ("Radio Paradise", 1, 1000)
-              , ("All Things Considered", 1, 1001)
+stationList = [("Hit List", defProb, 2)
+              , ("Today's Country", defProb, 3)
+              , ("Solid Gold Oldies", defProb, 4)
+              , ("Classic Rock", defProb, 6)
+              , ("Alternative", defProb, 14)
+              , ("Adult Alternative", 15, 22)
+              , ("Classic Country", defProb, 27)
+              , ("Sounds of the Season", defProb, 32)
+              , ("Rock Hits", defProb, 35)
+              , ("70s", defProb, 36)
+              , ("80s", defProb, 38)
+              , ("90s", defProb, 39)
+              , ("Country Hits", defProb, 40)
+              , ("Rock", 25, 44)
+              , ("Pop Country", defProb, 47)
+              , ("Y2k", defProb, 48)
+              , ("Indie", defProb, 117)
+              , ("Lounge", defProb, 150)
+              , ("Radio Paradise", 15, 1000)
+              , ("All Things Considered", 15, 1001)
               ]
+  where
+    defProb = 2.8125
 
 readStation
   :: (MonadIO m, MonadBaseControl IO m) =>

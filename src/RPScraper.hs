@@ -25,7 +25,9 @@ rpScraper = do
 
 createTrack :: [Text] -> Track
 createTrack [artist, name, album] = Track artist name (Just album) Nothing
-createTrack _ = error "Incorrect input"
+createTrack l = error "Incorrect input"
+
+createTracks = fmap createTrack . chunksOf 3 . fmap pack
 
 getTracks =
   runX $ (readDocument [withValidate no, withParseHTML yes, withHTTP mempty] rpURL //> hasName "table")
