@@ -22,7 +22,7 @@ import Database.Persist.Sqlite
 import Database.Persist
 import Data.Aeson
 import Data.Aeson.Types
-import Transient.Base (TransIO (..), keep')
+-- import Transient.Base (TransIO (..), keep')
 import Control.Monad.Trans.Resource
 import Control.Monad.Base
 import Control.Monad.Trans.Control
@@ -122,13 +122,17 @@ addToDB track stationId = do
 
   transactionSave
 
-instance MonadThrow TransIO where
-  throwM = liftIO . throwM
+data StationWeight = StationWeight
+  { stationName_ :: StationName_
+  , stationProb :: StationProb
+  , stationId :: StationID
+  } deriving (Read, Show, Eq)
 
-instance MonadBaseControl IO TransIO where
-  type StM TransIO a = a
-  liftBaseWith f = liftIO $ f keep'
-  restoreM = return
+newtype StationName_ = StationName_ Text
+  deriving (Read, Show, Eq)
 
-instance MonadBase IO TransIO where
-  liftBase = liftIO
+newtype StationID = StationID Int
+  deriving (Read, Show, Eq)
+
+data StationProb = Prob Float | DefProb
+  deriving (Read, Show, Eq)

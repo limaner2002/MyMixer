@@ -25,8 +25,10 @@ import Database.Esqueleto ((^.))
 import Data.Conduit
 import Data.Conduit.Attoparsec
 import qualified Data.Conduit.Combinators as CC
+import Control.Arrow
 
 import Data.Aeson
+import ConfigFile
 
 import Core
 import Util
@@ -59,12 +61,12 @@ decodeTrackSearch = CC.map (\(_, x) -> case fromJSON x of
                                          Success val -> Right val
                            )
 
-findTracks :: (MonadThrow m, MonadIO m, MonadResource m) => (ReaderT SqlBackend m) ()
-findTracks = go
+findTracks :: (MonadThrow m, MonadIO m, MonadResource m) => FilePath -> Int -> Int -> Int -> (ReaderT SqlBackend m) ()
+findTracks configFilePath x y z = go
     where
       go = do
         mgr <- liftIO $ newManager tlsManagerSettings
-        tracks <- liftIO $ createMix 5 2 10
+        tracks <- liftIO $ createMix configFilePath x y z
         mapM_ (f mgr) tracks
 
         uris <- getTracksFromIds $ trackIds tracks
@@ -133,11 +135,11 @@ consumeMatch target trackId = CC.mapM_ handleIt
           "N" -> g
           _ -> putStrLn "I don't understand that answer. Please enter only Y/N" >> yesOrNo f g
 
-createMix :: Int -> Int -> Int -> IO [TrackForStation]
-createMix stations tracks n = go
+createMix :: FilePath -> Int -> Int -> Int -> IO [TrackForStation]
+createMix configFilePath stations tracks n = go
  where
    go = do
-     stProb <- stationProbs
+     stProb <- stationProbs configFilePath
      -- let r = fmap concat $ fmap concat $ repeatedSampling stProb
      let r = fmap concat $ fmap concat $ replicateM n <$> join $ mapM (weightedSampleCDF tracks) <$> weightedSampleCDF stations stProb
   
@@ -147,35 +149,79 @@ createMix stations tracks n = go
    -- weightedList :: Map Float (Map Int TrackForStation) -> RVarT Identity [[TrackForStation]]
    -- weightedList stProb = join $ mapM (weightedSampleCDF tracks) <$> weightedSampleCDF stations stProb
 
-stationProbs :: (MonadBaseControl IO m, MonadIO m) => m (Map Float (Map Int TrackForStation))
-stationProbs = do
+stationProbs :: (MonadBaseControl IO m, MonadIO m, MonadThrow m) => FilePath -> m (Map Float (Map Int TrackForStation))
+stationProbs configFilePath = do
+  stationList <- runKleisli (setStationWeights >>> arr (fmap toStationTriple)) configFilePath
   stations <- filter (\(_, x) -> x /= mempty) <$> mapM readStation stationList
   return $ cdfMapFromList stations
 
-stationList :: [(String, Float, Int)]
-stationList = [("Hit List", defProb, 2)
-              , ("Today's Country", defProb, 3)
-              , ("Solid Gold Oldies", defProb, 4)
-              , ("Classic Rock", defProb, 6)
-              , ("Alternative", defProb, 14)
-              , ("Adult Alternative", 15, 22)
-              , ("Classic Country", defProb, 27)
-              , ("Sounds of the Season", defProb, 32)
-              , ("Rock Hits", defProb, 35)
-              , ("70s", defProb, 36)
-              , ("80s", defProb, 38)
-              , ("90s", defProb, 39)
-              , ("Country Hits", defProb, 40)
-              , ("Rock", 25, 44)
-              , ("Pop Country", defProb, 47)
-              , ("Y2k", defProb, 48)
-              , ("Indie", defProb, 117)
-              , ("Lounge", defProb, 150)
-              , ("Radio Paradise", 15, 1000)
-              , ("All Things Considered", 15, 1001)
-              ]
+readStationWeight :: MonadThrow m => Config -> m [StationWeight]
+readStationWeight cfg = getVal "weights" cfg
+
+setDefProb :: [StationWeight] -> Float -> [StationWeight]
+setDefProb weights defProb = fmap setIt weights
   where
-    defProb = 2.8125
+    setIt station@(StationWeight {stationProb = DefProb}) = station {stationProb = Prob defProb }
+    setIt station = station
+
+calculateDef :: [StationWeight] -> Float
+calculateDef weights = (100 - totalProb) / (fromIntegral nDefs)
+  where
+    addIt (totalProb, nDefs) DefProb = (totalProb, nDefs + 1)
+    addIt (totalProb, nDefs) (Prob p) = (totalProb + p, nDefs)
+    (totalProb, nDefs) = foldl' addIt (0, 0) $ fmap stationProb weights
+
+setStationWeights :: (MonadIO m, MonadThrow m) => Kleisli m FilePath [StationWeight]
+setStationWeights = Kleisli readConfigFile >>> Kleisli readStationWeight >>> (id &&& arr calculateDef) >>> arr (uncurry setDefProb)
+
+toStationTriple :: StationWeight -> (String, Float, Int)
+toStationTriple (StationWeight (StationName_ n) (Prob p) (StationID id)) = (unpack n, p, id)
+
+
+-- stationList :: [(String, Float, Int)]
+-- stationList = [("Hit List", defProb, 2)
+--               , ("Today's Country", defProb, 3)
+--               , ("Solid Gold Oldies", defProb, 4)
+--               , ("Classic Rock", 7.5, 6)
+--               , ("Alternative", 7.5, 14)
+--               , ("Adult Alternative", 7.5, 22)
+--               , ("Classic Country", defProb, 27)
+--               , ("Sounds of the Season", defProb, 32)
+--               , ("Rock Hits", defProb, 35)
+--               , ("70s", defProb, 36)
+--               , ("80s", defProb, 38)
+--               , ("90s", defProb, 39)
+--               , ("Country Hits", defProb, 40)
+--               , ("Rock", 25, 44)
+--               , ("Pop Country", defProb, 47)
+--               , ("Y2k", defProb, 48)
+--               , ("Indie", defProb, 117)
+--               , ("Lounge", 7.5, 150)
+--               , ("Radio Paradise", 7.5, 1000)
+--               , ("All Things Considered", 7.5, 1001)
+--               ]
+--   where
+--     defProb = 2.8125
+
+-- stationList :: [(String, Float, Int)]
+-- stationList = [("Hit List", 10, 2)
+--               , ("Today's Country", 10, 3)
+--               , ("Solid Gold Oldies", 10, 4)
+--               , ("Adult Alternative", defProb, 22)
+--               , ("Classic Country", defProb, 27)
+--               , ("Sounds of the Season", 20, 32)
+--               , ("70s", 10, 36)
+--               , ("80s", defProb, 38)
+--               , ("90s", defProb, 39)
+--               , ("Country Hits", defProb, 40)
+--               , ("Pop Country", defProb, 47)
+--               , ("Radio Paradise", defProb, 1000)
+--               , ("Soft Rock", 10, 1)
+--               , ("Singers & Swing", defProb, 18)
+--               , ("Rock", defProb, 44)
+--               ]
+--   where
+--     defProb = 3.33
 
 readStation
   :: (MonadIO m, MonadBaseControl IO m) =>
@@ -227,3 +273,4 @@ trackProbs :: [TrackForStation] -> Map Int TrackForStation
 trackProbs tracks = cdfMapFromList $ fmap f tracks
     where
       f t@(TrackForStation (_, n, _)) = (n, t)
+
