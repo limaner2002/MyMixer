@@ -53,7 +53,9 @@ findTrack manager request track trackId = do
     Nothing -> do
       response <- http request manager
       responseBody response $$+- conduitParser json =$ decodeTrackSearch =$ CC.map (fmap (getClosestMatch track)) =$ consumeMatch track trackId
-    Just uri -> putStrLn "This track has already been found and I don't need to search for it!"
+    Just _ -> do
+      putStrLn "This track has already been found and I don't need to search for it!"
+      decrementSeen trackId
 
 decodeTrackSearch :: MonadResource m => ConduitM (PositionRange, Value) (Either Text (TrackSearch [] Track)) m ()
 decodeTrackSearch = CC.map (\(_, x) -> case fromJSON x of
@@ -67,10 +69,12 @@ findTracks configFilePath x y z = go
       go = do
         mgr <- liftIO $ newManager tlsManagerSettings
         tracks <- liftIO $ createMix configFilePath x y z
-        mapM_ (f mgr) tracks
+        mapM_ (f mgr) tracks -- This has some sort of side-effect that
+                             -- is necessary for this function to
+                             -- work. I don't know what I was thinking
+                             -- when I wrote this.
 
         uris <- getTracksFromIds $ trackIds tracks
-        -- mapM_ (\(E.Value mUri) -> dispUri mUri) uris
         writeFile "/tmp/results.txt" $ intercalate "\n" $ fmap (\(E.Value mUri) -> dispUri mUri) uris
 
       f :: (MonadThrow m, MonadIO m, MonadResource m) => Manager -> TrackForStation -> (ReaderT SqlBackend m) ()
@@ -115,7 +119,9 @@ consumeMatch target trackId = CC.mapM_ handleIt
                        putStr "Is this correct? (Y/N): "
                        yesOrNo (updateUri (trackUri track)) askPaste
       updateUri :: MonadIO m => Maybe Text -> SqlPersistT m ()
-      updateUri uri = updateTrackUri trackId uri
+      updateUri uri = do
+        updateTrackUri trackId uri
+        decrementSeen trackId
       askPaste :: (MonadIO m) => SqlPersistT m ()
       askPaste = liftIO (putStr "Would you like to paste the URI here? (Y/N): ") >> yesOrNo pasteUri (return ())
       pasteUri :: MonadIO m => SqlPersistT m ()
@@ -140,14 +146,9 @@ createMix configFilePath stations tracks n = go
  where
    go = do
      stProb <- stationProbs configFilePath
-     -- let r = fmap concat $ fmap concat $ repeatedSampling stProb
      let r = fmap concat $ fmap concat $ replicateM n <$> join $ mapM (weightedSampleCDF tracks) <$> weightedSampleCDF stations stProb
   
      runRVar r DevURandom
-   -- repeatedSampling :: Map Float (Map Int TrackForStation) -> RVarT Identity [[[TrackForStation]]]
-   -- repeatedSampling stProb = replicateM n <$> weightedList stProb
-   -- weightedList :: Map Float (Map Int TrackForStation) -> RVarT Identity [[TrackForStation]]
-   -- weightedList stProb = join $ mapM (weightedSampleCDF tracks) <$> weightedSampleCDF stations stProb
 
 stationProbs :: (MonadBaseControl IO m, MonadIO m, MonadThrow m) => FilePath -> m (Map Float (Map Int TrackForStation))
 stationProbs configFilePath = do
@@ -177,52 +178,6 @@ setStationWeights = Kleisli readConfigFile >>> Kleisli readStationWeight >>> (id
 toStationTriple :: StationWeight -> (String, Float, Int)
 toStationTriple (StationWeight (StationName_ n) (Prob p) (StationID id)) = (unpack n, p, id)
 
-
--- stationList :: [(String, Float, Int)]
--- stationList = [("Hit List", defProb, 2)
---               , ("Today's Country", defProb, 3)
---               , ("Solid Gold Oldies", defProb, 4)
---               , ("Classic Rock", 7.5, 6)
---               , ("Alternative", 7.5, 14)
---               , ("Adult Alternative", 7.5, 22)
---               , ("Classic Country", defProb, 27)
---               , ("Sounds of the Season", defProb, 32)
---               , ("Rock Hits", defProb, 35)
---               , ("70s", defProb, 36)
---               , ("80s", defProb, 38)
---               , ("90s", defProb, 39)
---               , ("Country Hits", defProb, 40)
---               , ("Rock", 25, 44)
---               , ("Pop Country", defProb, 47)
---               , ("Y2k", defProb, 48)
---               , ("Indie", defProb, 117)
---               , ("Lounge", 7.5, 150)
---               , ("Radio Paradise", 7.5, 1000)
---               , ("All Things Considered", 7.5, 1001)
---               ]
---   where
---     defProb = 2.8125
-
--- stationList :: [(String, Float, Int)]
--- stationList = [("Hit List", 10, 2)
---               , ("Today's Country", 10, 3)
---               , ("Solid Gold Oldies", 10, 4)
---               , ("Adult Alternative", defProb, 22)
---               , ("Classic Country", defProb, 27)
---               , ("Sounds of the Season", 20, 32)
---               , ("70s", 10, 36)
---               , ("80s", defProb, 38)
---               , ("90s", defProb, 39)
---               , ("Country Hits", defProb, 40)
---               , ("Pop Country", defProb, 47)
---               , ("Radio Paradise", defProb, 1000)
---               , ("Soft Rock", 10, 1)
---               , ("Singers & Swing", defProb, 18)
---               , ("Rock", defProb, 44)
---               ]
---   where
---     defProb = 3.33
-
 readStation
   :: (MonadIO m, MonadBaseControl IO m) =>
      (t, t1, Int) -> m (t1, Map Int TrackForStation)
@@ -250,10 +205,21 @@ updateTrackUri trackKey trackUri =
       E.set track [TrackUri E.=. (E.val trackUri)]
       E.where_ (track ^. TrackId E.==. (E.val trackKey))
 
+type TrackForStation' = [(E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value (Maybe Text), E.Value Int, E.Value (Key Track))]
+
+decrementSeen :: MonadIO m => Key Track -> SqlPersistT m ()
+decrementSeen trackKey =
+  E.update $ \station -> do
+      E.set station [TrackStationsSeen E.-=. (E.val 1)]
+      E.where_ ( station ^. TrackStationsTrack E.==. (E.val trackKey)
+           E.&&. station ^. TrackStationsSeen E.>=. (E.val 1)
+               )
+      
+
 getTrackForStation
   :: (MonadIO m, MonadBaseControl IO m)
      => E.SqlExpr (E.Value (Key Station))
-     -> m [(E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value (Maybe Text), E.Value Int, E.Value (Key Track))]
+     -> m TrackForStation'
 getTrackForStation stationId =
     runSqlite dbLocation
       $ E.select
