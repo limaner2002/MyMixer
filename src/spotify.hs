@@ -1,151 +1,102 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE TypeFamilies          #-}
 
-import System.Environment
-import           Network.HTTP.Conduit
-import Data.Conduit
-import Flow
-import Control.Monad.Trans.State
-import Control.Monad.State (lift)
-import Control.Monad.Trans.Except
-import Keys
-import Data.Time
-import System.Directory
-import Database.Persist (insert, selectList, entityVal)
-import Database.Persist.Sqlite (runSqlite, runMigration)
-import Model
-import qualified Data.Text as T
-import qualified Data.ByteString.Char8 as C8
-import qualified Data.ByteString.Lazy.Char8 as BL
-import Control.Monad.Logger (runNoLoggingT, runLoggingT)
+import ClassyPrelude
+import Prelude ()
+import qualified Transient.Base as Trans
+import Database.Persist.Sqlite
+import Control.Monad.Base
 
-import Control.Monad.Reader (ReaderT)
-import Database.Persist.Sql (SqlPersistT)
-import System.Log.FastLogger (fromLogStr)
-import Control.Monad.Trans.Resource (ResourceT)
-import Network.OAuth.OAuth2 (OAuth2Result)
-import Control.Monad.IO.Class
-import Data.Maybe (catMaybes)
-import System.IO
-import Control.Exception.Enclosed
+import McScraper
+import NprScraper
+import RPScraper
+import Mixer
+import Core (dbLocation, migrateAll)
+import Options.Applicative hiding ((<>))
+import qualified Options.Applicative as OA
 
-import Options.Applicative
+data CommandOptions
+    = Mc
+    | Mix
+    | Npr
+    | Migrate
+    | Rp
+    | Test
+      deriving (Show, Eq, Read, Typeable)
 
-import Options
-import SpotifyTypes
-import Library
-import Util
-import Types
+transientMain :: IO ()
+transientMain = do
+  selectedOp <- Trans.keep $ do
+    r <-        Trans.option Mc "Scrape tracks from the Music Choice website."
+            <|> Trans.option Npr "Scrape tracks from All Things Considered on NPR."
+            <|> Trans.option Rp "Scrape tracks from RadioParadise."
+            <|> Trans.option Mix "Take the tracks from the SQLite database and create a mix from them."
+            <|> Trans.option Test "Run the test function."
+            <|> Trans.option Migrate "Run the sqlite migration."
+    Trans.exit r
 
--- instance Show BL.ByteString where
---     show = BL.unpack
+  case selectedOp of
+    Mc -> Trans.keep mcScraper
+    Npr -> Trans.keep $ Trans.oneThread nprScraper
+    Rp -> Trans.keep $ Trans.oneThread rpScraper
+    Test -> testFcn
+    Migrate -> runSqlite dbLocation $ runMigration migrateAll
 
--- instance Show C8.ByteString where
---     show = BL.unpack
+data Options
+  = Scraper
+  | Mixer FilePath Int Int Int
+  deriving (Show, Eq, Read)
 
-getConfDir :: IO String
-getConfDir = do
-#ifdef darwin_HOST_OS
-       home <- getHomeDirectory
-       return $ home ++ "/Library/Application Support/Me" ++ "/MyMixer"
-#else
-       getAppUserDataDirectory "MyMixer"
-#endif
+optionsParser :: Parser Options
+optionsParser = scraperParser <|> mixerParser
 
-createFlow :: Maybe OAuth2WebServerFlow -> UTCTime -> Manager -> OAuth2WebServerFlow
-createFlow (Just oldFlow) _ mgr = oldFlow
-                           { oauth2 = spotifyKey
-                           , manager = mgr
-                           , flowScope = spotifyScope
-                           , authService = "My Spotify Mixer 0.2"
-                           , authAccount = "MyMixer"
-                           }
+mixerParser :: Parser Options
+mixerParser = Mixer
+  <$> strOption
+    ( long "config"
+    OA.<> metavar "CONFIG_FILE_PATH"
+    OA.<> help "The filepath of the config file containing the station names, weights, and ids."
+    )
+  <*> option auto
+    (  long "stations"
+    OA.<> metavar "N_STATIONS"
+    OA.<> help "The number of stations to pull from before replacing."
+    )
+  <*> option auto
+    (  long "tracks"
+    OA.<> metavar "N_TRACKS"
+    OA.<> help "The number of tracks to select from each station."
+    )
+  <*> option auto
+    (  short 'n'
+    OA.<> metavar "N"
+    OA.<> help "The number of times to repeat this process."
+    )
 
-createFlow Nothing curTime mgr = 
-    OAuth2WebServerFlow
-    { flowToken = Nothing
-    , oauth2 = spotifyKey
-    , manager = mgr
-    , flowScope = spotifyScope
-    , timestamp = curTime
-    , authService = "My Spotify Mixer 0.2"
-    , authAccount = "MyMixer"
-    }
+scraperParser :: Parser Options
+scraperParser = argument auto (metavar "Scraper")
 
-findTracks :: Int -> Flow ()
-findTracks stationId = do
-  scraped <- getScrapedTracks stationId
-  eTracks <- sequence $ fmap findTrack scraped
-  -- zune <- testPlaylist
-
-  mapM_ (liftIO . printFindResults) eTracks
-  liftIO $ withFile "/tmp/found.txt" WriteMode $ \handle ->
-      (mapM_ . mapM_ . mapM_) (\track ->
-                                   hPutStrLn handle $ show track
-                              ) eTracks
-
-  -- -- addTracks tracks zune
-
-printFindResults (Left msg) = print msg
-printFindResults (Right (Just track)) = putStrLn $ T.unpack $ trackUri track
-printFindResults _ = return ()
-
--- This is here temporarily for testing purposes only.
-testPlaylist = getPlaylist $
-           newSpotifyUri "spotify:user:limaner2002:playlist:0TeVz0wsIThE32KFkKroIo"   
-
--- saveMix :: Flow ()
--- saveMix = do
---   desiredPlaylists <- getDesiredPlaylists
---   trackObjs <- sequence $ fmap getPlaylistTracks desiredPlaylists
---   let tracks = fmap (fmap track) trackObjs
---   logInfo "Saving tracks"
---   mapM_ (mapM_ saveSpotifyTrack) tracks
-
-dispatch :: Command -> Flow ()
-dispatch (FindTracks stationId) = findTracks stationId
-dispatch DisplayStations = showStations
-dispatch GetArtists = do
-  sourcePlaylists <- getSourcePlaylists
-  let uris = map sourcePlaylistsUuid sourcePlaylists
-  playlist <- sequence $ map (getPlaylist . newSpotifyUri) uris
-  liftIO $ print playlist
-dispatch GetPlaylistTracks = do
-  playlist <- getPlaylist $ newSpotifyUri "spotify:user:limaner2002:playlist:1mdYP7eSHscQ14O9ERCPHh"
-  pagingSource (trackObjectHref $ tracks playlist)
-                 $$ getPlaylistTracks $= printConsumer
-  return ()
-
-showStations :: Flow ()
-showStations = do
-  stations <- getStations
-  liftIO $ putStrLn $ renderStations stations
-
-opts :: ParserInfo Command
-opts = info (parseArgs <**> helper) idm
+optsInfo :: ParserInfo Options
+optsInfo = info (helper <*> optionsParser)
+  (  fullDesc
+  OA.<> progDesc "Print a greeting for TARGET"
+  OA.<> header "hello - a test for optparse-applicative"
+  )
 
 main :: IO ()
 main = do
-  cmd <- execParser opts
-  dbPath <- getDBPath "db.sqlite"
+  opt <- execParser optsInfo
+  case opt of
+    Scraper -> transientMain
+    (Mixer configFilePath x y z) -> runSqlite dbLocation (findTracks configFilePath x y z)
 
-  mgr <- newManager tlsManagerSettings
-  curTime <- getCurrentTime
-
-  oldFlow <- runSqlite dbPath (runMigration migrateAll >>
-                               retrieveFlow "My Spotify Mixer 0.2"
-                                            "MyMixer"
-                              )
-
-  let runDB = (runSqlite dbPath)
-      fn = (evalStateT . runExceptT . (flip runLoggingT myLogger) . runDB)
-         ( do
-             runMigration migrateAll
-             runMigration migrateFlow
-             dispatch cmd
-         )
-         (createFlow oldFlow curTime mgr)
-  res <- fn
-  case res of
-    Left msg -> hPutStrLn stderr $ BL.unpack msg
-    Right val -> return val
+testFcn :: (MonadIO m, MonadBase IO m) => m ()
+testFcn = do
+  putStrLn "Please enter (Y/N)"
+  (answer :: Text) <- getLine
+  case answer of
+    "Y" -> putStrLn "You chose no!"
+    "N" -> putStrLn "You chose yes!"
