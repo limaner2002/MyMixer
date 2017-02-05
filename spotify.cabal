@@ -2,53 +2,57 @@ name:                spotify
 version:             0.1.0.0
 synopsis:            Initial project template from stack
 description:         Please see README.md
-homepage:            http://github.com/name/project
+homepage:            https://github.com/githubuser/MyMixer#readme
 license:             BSD3
 license-file:        LICENSE
-author:              Your name here
-maintainer:          your.address@example.com
--- copyright:           
+author:              Author name here
+maintainer:          example@example.com
+copyright:           2016 Author name here
 category:            Web
 build-type:          Simple
--- extra-source-files:  
+extra-source-files:  README.md
 cabal-version:       >=1.10
 
-executable spotify
+library
   hs-source-dirs:      src/
-  main-is:             spotify.hs
-  other-modules:       Util Mixer McScraper Core NprScraper RPScraper
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2 -fllvm
-  extensions:          OverloadedStrings
+  exposed-modules:     Spotify
+                       MixerProcess
+                       Server
+  other-modules:       Core
+                     , Util
   build-depends:       base
-                     , hoauth2
                      , classy-prelude
-                     , http-conduit
-                     , bytestring
                      , aeson
                      , resourcet
-                     , time
-                     , hs-config
-                     , transformers
-                     , transient
-                     , random
-                     , conduit
-                     , conduit-extra
-                     , conduit-combinators
-                     , monad-loops
-                     , array
-                     , persistent
-                     , persistent-template
-                     , persistent-sqlite
-                     , random-source
-                     , random-fu
-                     , random-extras
-                     , esqueleto
                      , transformers-base
                      , monad-control
-                     , hxt
-                     , hxt-http
-                     , split
-                     , optparse-applicative
+                     , persistent-template
+                     , persistent
+                     , persistent-sqlite
+                     , esqueleto
+                     , random-fu
+                     , random-source
+                     , random-extras
+                     , http-conduit
+                     , machinecell-contrib
+                     , hs-config
+                     , wai-app-static
+                     , wai
+                     , warp
+                     , http-types
+                     , HTTP
+                     , base64-bytestring
+                     , open-browser
+                     , array
+  default-language:    Haskell2010
+
+executable spotify
+  hs-source-dirs:      app/
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2
+  extensions:          OverloadedStrings
+  build-depends:       spotify
+                     , base
   default-language:    Haskell2010
 
 source-repository head
