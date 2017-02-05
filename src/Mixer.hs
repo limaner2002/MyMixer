@@ -208,7 +208,8 @@ updateTrackUri trackKey trackUri =
 type TrackForStation' = [(E.Value Text, E.Value Text, E.Value (Maybe Text), E.Value (Maybe Text), E.Value Int, E.Value (Key Track))]
 
 decrementSeen :: MonadIO m => Key Track -> SqlPersistT m ()
-decrementSeen trackKey =
+decrementSeen trackKey = do
+  liftIO $ putStrLn "Decrementing seen counter."
   E.update $ \station -> do
       E.set station [TrackStationsSeen E.-=. (E.val 1)]
       E.where_ ( station ^. TrackStationsTrack E.==. (E.val trackKey)
@@ -239,4 +240,3 @@ trackProbs :: [TrackForStation] -> Map Int TrackForStation
 trackProbs tracks = cdfMapFromList $ fmap f tracks
     where
       f t@(TrackForStation (_, n, _)) = (n, t)
-

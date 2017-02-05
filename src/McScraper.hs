@@ -35,7 +35,7 @@ mcScraper = do
   scrapeStations mgr var <|> (threads 1 $ saveStationTrack var)
 
 scrapeStations :: Manager -> EVar (Track, Key Station) -> TransIO ()
-scrapeStations mgr var = foldr (<|>) empty $ fmap (getTrackStation mgr var . StationKey) [44,3,117,2,4,6,14,22,27,32,35,36,38,39,40,47,48,150,1,18]
+scrapeStations mgr var = foldr (<|>) empty $ fmap (getTrackStation mgr var . StationKey) [44,3,117,2,4,6,14,22,27,32,35,36,38,39,40,47,48,150,1,18,15]
 
 saveStationTrack :: EVar (Track, Key Station) -> TransIO ()
 saveStationTrack var = do
