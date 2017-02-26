@@ -20,6 +20,7 @@ library
                        Server
   other-modules:       Core
                      , Util
+                     , WeightedMap
   build-depends:       base
                      , classy-prelude
                      , aeson

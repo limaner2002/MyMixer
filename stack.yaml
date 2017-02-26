@@ -19,7 +19,7 @@ packages:
 #     commit: dc436783f6e1cfe3a088e818dc94f503e1c5e709
 - location:
     git: https://github.com/limaner2002/hs-config.git
-    commit: c8f6c750c260eb04801e85ee44510ae33588aa27
+    commit: 280987b5fa4456a5de5dfc1f63ee5b121c3d2a01
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
