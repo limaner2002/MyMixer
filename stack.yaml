@@ -1,17 +1,17 @@
 # For more information, see: http://docs.haskellstack.org/en/stable/yaml_configuration.html
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-7.19
+resolver: lts-8.0
 
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-- location:
-    git: https://github.com/limaner2002/machinecell-contrib.git
-    commit: d3f1ed6df2291a6b379f743ec7072ec93c343530
-  extra-dep: true
-# - location: /Users/josh/workspace/machinecell-contrib
+# - location:
+#     git: https://github.com/limaner2002/machinecell-contrib.git
+#     commit: d3f1ed6df2291a6b379f743ec7072ec93c343530
 #   extra-dep: true
+- location: /Users/josh/workspace/machinecell-contrib
+  extra-dep: true
 - location: ../machinecell
   extra-dep: true
 # - location:
@@ -19,7 +19,7 @@ packages:
 #     commit: dc436783f6e1cfe3a088e818dc94f503e1c5e709
 - location:
     git: https://github.com/limaner2002/hs-config.git
-    commit: 280987b5fa4456a5de5dfc1f63ee5b121c3d2a01
+    commit: 640c840b13f8caa5155117bfc2134ced70bf4afe
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

@@ -16,6 +16,7 @@ import Data.Random.Source.DevRandom
 import Data.Random.Distribution.Uniform.Exclusive (Excludable)
 import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Aeson
+import Data.IOData (getLine)
 
 import Network.HTTP.Conduit
 import qualified Network.HTTP.Types as HT
@@ -30,6 +31,8 @@ import ClassyPrelude
 import Util
 import WeightedMap
 import WeightedShuffle hiding (sampleItem, sample)
+
+import Database.Persist.Sqlite (runSqlite)
 
 data StationTracks_ a = StationTracks_ (Key Station) a
   deriving Show
@@ -176,11 +179,6 @@ searchRequest (Track artist name _ _) = parseRequest $ unpack $ searchBaseURL <>
   where
     urlEncode = decodeUtf8 . HT.urlEncode False . encodeUtf8
 
-fromJSON' :: (MonadThrow m, FromJSON a) => Value -> m a 
-fromJSON' v = case fromJSON v of
-  Error e -> throwM $ ParseError (e <> ": " <> (unpack . decodeUtf8 . encode $ v))
-  Success x -> return x
-
 asTrackSearch :: TrackSearch [] Track -> TrackSearch [] Track
 asTrackSearch = id
 
@@ -320,14 +318,38 @@ asStationWeight = id
 
 -- let updateIt = machine (mapM decrementSeen) &&& (evMap (fmap searchResult) >>> machine (mapM (liftIO . userInput)) >>> evMap (fmap resultURI) >>> machine print >>| (id >>? evMap (<> "\n") >>> sinkFile "/tmp/result.txt")) >>> tee
 updateIt
-  :: MonadResource m => ProcessA (Kleisli (ReaderT E.SqlBackend m)) (Event (Either SomeException (SampledTrack Unconfirmed))) (Event ())
-updateIt = proc input -> do
+  :: MonadResource m => FilePath -> ProcessA (Kleisli (ReaderT E.SqlBackend m)) (Event (Either SomeException (SampledTrack Unconfirmed))) (Event Int)
+updateIt sinkFP = proc input -> do
   confirmed <- machine (mapM (liftIO . confirmSearchResult)) -< input
   decSeen <- machine (mapM decrementSeen) >>> machine print >>| id -< confirmed
   updURI <- machine (mapM updateURI) >>> machine print >>| id -< confirmed
-  toFile <- evMap (fmap (resultURI . searchResult)) >>> machine print >>| (id >>? evMap (<> "\n") >>> sinkFile "/tmp/result.txt") -< confirmed
-  evts <- gather -< [decSeen, updURI, toFile]
-  returnA -< evts
+  toFile <- evMap (fmap (resultURI . searchResult)) >>> machine print >>| (id >>? evMap (<> "\n") >>> sinkFile sinkFP) -< confirmed
+
+  evt <- evMap (fmap (resultURI . searchResult)) >>> arr (const noEvent) >>| id >>? id -< confirmed
+
+  count <- evMap (+) >>> accum 0 -< 1 <$ evt
+  returnA -< count <$ evt
+
+-- getN :: MonadResource m => TChan Text -> Manager -> Int -> ProcessA (Kleisli (ReaderT E.SqlBackend m)) (Event FilePath) (Event Int)
+-- getN chan mgr nDesired = go
+--   where
+--     go = proc input -> do
+--       res <- id -< fmap (\fp -> (nDesired, fp)) input
+--       loop -< res
+--     loop = proc input -> do
+--       fp <- evMap snd -< input
+--       nFound <- evMap (\x -> trace "Creating mix" x) >>> mixIt -< fp
+--       n <- evMap fst -< input
+
+--       newN <- mergeEvents >>> evMap (uncurry (-)) -< (n, nFound)
+--       traceN <- hold 0 -< n
+--       mContinue <- evMap (> 0) >>> evMap Just >>> hold Nothing -< newN
+--       case mContinue of
+--         Nothing -> returnA -< noEvent
+--         Just False -> returnA -< newN
+--         Just True -> mergeEvents >>> loop -< (newN, fp)
+
+--     mixIt = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2 >>> updateIt chan
 
 resultURI :: SearchResult Confirmed -> Maybe Text
 resultURI (Cached t) = trackUri t
@@ -383,3 +405,30 @@ yesOrNo f g = do
     "N" -> No <$> g
     _   -> putStrLn "I don't understand that answer. Please enter only Y/N" >> yesOrNo f g
 
+runIt :: Text -> FilePath -> Int -> IO ()
+runIt dbPath weightPath n = do
+  -- chan <- newTChanIO
+  mgr <- newManager tlsManagerSettings
+  runSqlite dbPath $ runKleisli (run_ $ mixIt mgr >>> updateIt "/tmp/result.txt" >>> machine print) $ take n $ repeat weightPath
+ where
+   mixIt mgr = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2
+--   race_
+--     (loopIt dbPath weightPath n chan mgr)
+--     (runRMachine (machine (const $ atomically $ readTChan chan) >>> sinkFile "/tmp/result.txt") $ repeat ())
+
+-- loopIt :: Text -> FilePath -> Int -> TChan Text -> Manager -> IO ()
+-- loopIt dbPath weightPath n chan mgr = go n
+--   where
+--     go n
+--       | n <= 0 = putStrLn "Done!"
+--       | otherwise = do
+--           n' <- runSqlite dbPath $ runKleisli (run collectIt) [weightPath]
+--           print n'
+--           let nSum = sum n'
+--           go (n - nSum)
+--     mixIt = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2
+--     collectIt = proc input -> do
+--       nEvt <- mixIt >>> updateIt chan -< input
+--       n <- hold 0 -< nEvt
+--       ended <- onEnd -< nEvt
+--       returnA -< n <$ ended

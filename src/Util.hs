@@ -1,11 +1,13 @@
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Util where
 
-import Prelude ()
 import ClassyPrelude
+import ParseCSV
 
 import Data.Array
+import Data.Aeson
 
 editDifference :: String -> String -> Int
 editDifference strA strB = d lenA lenB
@@ -39,3 +41,8 @@ diff targetParts resultParts = foldl' (+) 0 diffs
     where
       diffs = fmap diff $ zip targetParts resultParts
       diff (target, result) = editDifference target result
+
+fromJSON' :: (MonadThrow m, FromJSON a) => Value -> m a 
+fromJSON' v = case fromJSON v of
+  Error e -> throwM $ ParseError (e <> ": " <> (unpack . decodeUtf8 . encode $ v))
+  Success x -> return x
