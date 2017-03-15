@@ -6,7 +6,9 @@
 {-# LANGUAGE Strict #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module MixerProcess where
+module MixerProcess
+  ( runIt
+  ) where
 
 import qualified Database.Esqueleto as E
 import Database.Esqueleto ((^.))
@@ -412,23 +414,3 @@ runIt dbPath weightPath n = do
   runSqlite dbPath $ runKleisli (run_ $ mixIt mgr >>> updateIt "/tmp/result.txt" >>> machine print) $ take n $ repeat weightPath
  where
    mixIt mgr = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2
---   race_
---     (loopIt dbPath weightPath n chan mgr)
---     (runRMachine (machine (const $ atomically $ readTChan chan) >>> sinkFile "/tmp/result.txt") $ repeat ())
-
--- loopIt :: Text -> FilePath -> Int -> TChan Text -> Manager -> IO ()
--- loopIt dbPath weightPath n chan mgr = go n
---   where
---     go n
---       | n <= 0 = putStrLn "Done!"
---       | otherwise = do
---           n' <- runSqlite dbPath $ runKleisli (run collectIt) [weightPath]
---           print n'
---           let nSum = sum n'
---           go (n - nSum)
---     mixIt = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2
---     collectIt = proc input -> do
---       nEvt <- mixIt >>> updateIt chan -< input
---       n <- hold 0 -< nEvt
---       ended <- onEnd -< nEvt
---       returnA -< n <$ ended

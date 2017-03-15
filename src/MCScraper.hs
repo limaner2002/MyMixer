@@ -3,7 +3,9 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE RecursiveDo #-}
 
-module MCScraper where
+module MCScraper
+  ( mcScraper
+  ) where
 
 import ClassyPrelude hiding (first)
 
