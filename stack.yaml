@@ -29,6 +29,7 @@ extra-deps:
 - lazysmallcheck-0.6
 - esqueleto-2.5.1
 - random-extras-0.19
+- concurrent-extra-0.7.0.10
 
 # Override default flag values for local packages and extra-deps
 flags: {}

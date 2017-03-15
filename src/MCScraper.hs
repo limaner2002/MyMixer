@@ -11,10 +11,12 @@ import Core
 import Util
 import MachineUtils hiding (filter)
 import Data.Aeson
-import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Resource hiding (release)
 import qualified Database.Esqueleto as E
 import Database.Esqueleto ((^.))
 import Database.Persist.Sqlite (runSqlite)
+
+import Control.Concurrent.Lock
 
 import Network.HTTP.Client (newManager, Manager, Request (..), parseRequest)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -58,18 +60,19 @@ scrapeTrack = proc req -> do
    compare _ _ = False
 
 scrapeStation :: MonadResource m =>
+  Lock -> 
   Request -> 
   Int -> 
      ProcessA
        (Kleisli (ReaderT E.SqlBackend m))
        (Event (Key Station))
        (Event (Maybe MCTrack))
-scrapeStation req thresh = dSwitch emit restart
+scrapeStation lock req thresh = dSwitch emit restart
  where
    emit = proc stationKey -> do
      -- Stops firing when enough tracks are scraped
      stationKey' <- yieldForever -< stationKey
-     mSeen <- machine getStationSeen >>> blockingSource' >>> evMap fromVal >>> hold Nothing -< stationKey'
+     mSeen <- machine getStationSeen' >>> blockingSource' >>> evMap fromVal >>> hold Nothing -< stationKey'
 
      case mSeen of
        Nothing -> returnA -< (noEvent, noEvent)
@@ -82,9 +85,17 @@ scrapeStation req thresh = dSwitch emit restart
              res <- mergeEventsL >>> evMap snd -< (updated, track)
 
              returnA -< (res, noEvent)
-   addIt' (MCTrack (track, _), stationKey) = addToDB track stationKey
+   addIt' (MCTrack (track, _), stationKey) = do
+     liftIO $ acquire lock
+     addToDB track stationKey
+     liftIO $ release lock
+   getStationSeen' stationKey = do
+     liftIO $ acquire lock
+     r <- getStationSeen stationKey
+     liftIO $ release lock
+     return r
    fromVal (E.Value v) = v
-   restart _ = scrapeStation req thresh
+   restart _ = scrapeStation lock req thresh
 
 addIt :: MonadIO m => TChan (Track, Key Station) -> TChan (Key Station) -> (MCTrack, Key Station) -> m ()
 addIt wChan ackChan (MCTrack (track, _), stationKey) = do
@@ -126,8 +137,6 @@ getLowStations thresh =
   E.select $ do
     E.from $ \(track `E.InnerJoin` station) -> do
       E.on $ track ^. TrackId E.==. station ^. TrackStationsTrack
-      E.where_ $ do
-        station ^. TrackStationsSeen E.>. (E.val 0)
       E.groupBy (station ^. TrackStationsStation)
       let seen = E.sum_ (station ^. TrackStationsSeen)
       E.having (seen E.<=. E.val (Just thresh))
@@ -144,10 +153,11 @@ getStationSeen stationKey =
         station ^. TrackStationsStation E.==. (E.val stationKey)
       return ( E.sum_ (station ^. TrackStationsSeen))
 
-mcScraper :: Text -> Int -> IO ()
-mcScraper dbPath thresh = do
+mcScraper :: Text -> Int -> Int -> IO ()
+mcScraper dbPath thresh stopAt = do
   l <- runSqlite dbPath (getLowStations thresh)
   req <- parseRequest "http://websiteservices.musicchoice.com/api/channels/NowPlaying/ttla/"
+  lock <- new
   let stations = filter onlyMC $ fmap fst l
       onlyMC (E.Value k) = unStationKey k /= 1000 && unStationKey k /= 1001
       fromVal (E.Value v) = v
@@ -155,5 +165,11 @@ mcScraper dbPath thresh = do
   putStrLn "Scraping the following stations"
   mapM_ (print . unStationKey . fromVal) stations
 
-  runSqlite dbPath $ runKleisli (run_ $ scrapeStation req thresh >>> filterJust >>> machine print) $ fmap (\(E.Value k) -> k) stations
-
+  runSqlite dbPath $ do
+    _ <- mapConcurrently (\x -> runKleisli (run_ $ scrapeStation lock req stopAt >>> filterJust >>> evMap (\(MCTrack (t, _)) -> pprintTrack t) >>> machine (printIt lock)) $ fmap (\(E.Value k) -> k) [x]) stations
+    return ()
+      where
+        printIt lock a = do
+          liftIO $ acquire lock
+          putStrLn a
+          liftIO $ release lock
