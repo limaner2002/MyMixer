@@ -10,17 +10,23 @@ import Text.XML.HXT.Arrow.XmlArrow
 import Text.XML.HXT.Core
 import Control.Arrow
 import Database.Persist.Sqlite (runSqlite)
-import Transient.Base
+-- import Transient.Base
 import Text.XML.HXT.HTTP
 import Data.List.Split
+import qualified Streaming.Prelude as S
 
 import Core
 
-rpScraper :: TransIO ()
-rpScraper = do
+-- rpScraper :: TransIO ()
+-- rpScraper = do
+--   tracks <- liftIO $ getTracks getRowText
+--   liftIO $ runSqlite dbLocation $ mapM_ (\x -> addToDB x (StationKey 1000)) tracks
+--   putStrLn $ "Scraped " <> tshow (length tracks) <> " tracks from \"Radio Paradise.\""
+
+rpScraper :: MonadIO m => Text -> m ()
+rpScraper dbLocation = do
   tracks <- liftIO $ getTracks getRowText
-  liftIO $ runSqlite dbLocation $ mapM_ (\x -> addToDB x (StationKey 1000)) tracks
-  putStrLn $ "Scraped " <> tshow (length tracks) <> " tracks from \"Radio Paradise.\""
+  runSqlite dbLocation $ S.each >>> S.mapM_ (\x -> addToDB x (StationKey 1000)) $ tracks
 
 createTrack :: [Text] -> Track
 createTrack [artist, name, album] = Track artist name (Just album) Nothing

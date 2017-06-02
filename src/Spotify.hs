@@ -139,12 +139,12 @@ tokenReqBody = RequestBodyBS body
            ]
 
 tokenReqHeader :: [(HeaderName, ByteString)]
-tokenReqHeader = [ ("Authorization", "basic " <> B64.encode ((encodeUtf8 . pack . fromClientID) cid <> ":" <> cis))
+tokenReqHeader = [ ("Authorization", "Basic " <> B64.encode ((encodeUtf8 . pack . fromClientID) cid <> ":" <> cis))
                  , ("Content-Type", "application/x-www-form-urlencoded")
                  ]
 
 code :: ByteString
-code = "AQAu0-H2o3pZqRSUEWKFJQC1MaSVEzBwtP-MRG5mBYuoL7RpPljyIOT5tmNTOTEPrundwz0AO4gE0GOXxZcgy-OInGAOlg7Ixmnc4VbbhGrsvUpa2QaFQc7s-1gW8DePZZq6CuHGPSPqMFmjUOikSEijEFynUWgJgZ8CJjXMV4In9_KdXddbY04Lx1AF718oNRdkmiwKcXgh8-uUW5VZNFwyz4atMPoWC-eCdpKysw"
+code = "AQCgwERV-daUPFBddmkkbPWunSdIfyyzK5Qjza-nbob37DZzadnkVh3kpnngU1q7z8xaK5fPy69paLYKaFO6SedFzB4z8s34p2rHZMFJKpMCjdAJNw4wcII5ibWgaXzercZoWpZP-lrMAYgji-8k-sgOrk_SXzCvjzcpMX-NcuFXemUReJKNu6eE7Qpr8avDIw6Jk4f6jfs6vTHQVH5LSedsUcowfqnDJs2mYkpyng"
 
 testRedirect :: URL Redirect
 testRedirect = URL "http://localhost:4242"

@@ -112,15 +112,15 @@ pprintTrack (Track artist song album uri) =
     "Uri: "   <> tshow uri <> "\n"
 
 dbLocation :: Text
-dbLocation = "/Users/josh/Library/Application Support/Me/MyMixer/newDB.sqlite"
+dbLocation = "/Users/joshuamccartney/Google Drive/MyMixer/newDB.sqlite"
 -- dbLocation = "/tmp/testDB.sqlite"
 
 addToDB :: MonadIO m => Track -> Key Station -> ReaderT SqlBackend m ()
 addToDB track stationId = do
   tId <- insertUnique' track
   _ <- upsert (TrackStations tId stationId 0) [TrackStationsSeen +=. 1]
-
-  transactionSave
+  return ()
+  -- transactionSave
 
 data StationWeight = StationWeight
   { stationName_ :: StationName_

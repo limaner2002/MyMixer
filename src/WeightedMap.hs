@@ -10,6 +10,7 @@
 module WeightedMap where
 
 import ClassyPrelude
+import Data.Random
 
 decrement :: (Ord a, Num a) => a -> a -> a
 decrement x y
@@ -115,6 +116,14 @@ leastLargest k (Node k' v left right)
   | otherwise = Just (k', v)
 leastLargest k Nil = Nothing
 
+greatestSmallest :: Ord k => k -> WeightMap k v -> Maybe (k, v)
+greatestSmallest k (Node k' v left right)
+  | k > k' = case greatestSmallest k right of
+               Nothing -> Just (k', v)
+               val -> val
+  | k < k' = greatestSmallest k left
+  | otherwise = Just (k', v)
+
 mapKeysWith_ :: (Ord k1, Ord k2) => (v -> v -> v) -> (k1 -> k2) -> Maybe v -> WeightMap k1 v -> WeightMap k2 v
 mapKeysWith_ fV fK (Just v1) (Node k v2 left right) = Node (fK k) (fV v1 v2) (newSubtree left) (newSubtree right)
   where
@@ -148,3 +157,26 @@ mRemoved k m = do
   oldVal <- lookup k m
   let m' = remove k m
   return $ (oldVal, m')
+
+data WeightKey = WeightKey
+  { weightKeyVal :: Float
+  , weightKeyCDF :: Float
+  } deriving Show
+
+-- Abuses the (-) from Num to subtract the actual weight from the CDF
+instance Num WeightKey where
+  (WeightKey _ cdfA) + (WeightKey valB cdfB) = WeightKey valB (cdfA + cdfB)
+  (WeightKey valA cdfA) - (WeightKey valB _) = WeightKey valA (cdfA - valB)
+  (WeightKey valA cdfA) * (WeightKey _ cdfB) = WeightKey valA (cdfA * cdfB)
+  abs (WeightKey valA cdfA) = WeightKey valA (abs cdfA)
+  signum (WeightKey valA cdfA) = WeightKey valA (signum cdfA)
+  fromInteger i = WeightKey (fromInteger i) 0
+
+instance Eq WeightKey where
+  a == b = weightKeyCDF a == weightKeyCDF b
+
+instance Ord WeightKey where
+  a <= b = weightKeyCDF a <= weightKeyCDF b
+
+instance Distribution Uniform WeightKey where
+  rvar (Uniform lower upper) = WeightKey 0 <$> (rvar $ Uniform (weightKeyCDF lower) (weightKeyCDF upper))

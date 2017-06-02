@@ -34,8 +34,10 @@ weightedSampleRemove = proc (maxK, m) -> do
   case mItem of
     Nothing -> returnA -< (maxK, m, Nothing)
     Just (k, item) -> do
-      newM <- arr (uncurry deleteMap) -< (k, m)
+      newM <- arr (uncurry updateMap) -< (k, m)
       returnA -< (k, newM, Just item)
+ where
+   updateMap k = updateWeights (decrement k) . deleteMap k
 
 weightedSamplesRemove :: (MonadRandom b, MonadBase b m, Distribution Uniform k, WeightedDict weighted k v, ContainerKey (weighted k v) ~ k, MapValue (weighted k v) ~ v, BPMKeyConstraint weighted k, BiPolyMap weighted,
                           Num k, Ord k, Monad m) =>
@@ -65,30 +67,6 @@ instance Exception NoItemException
 asMonadThrow :: MonadThrow m => Maybe a -> m a
 asMonadThrow Nothing = throwM $ NoItemException "There was no item present!"
 asMonadThrow (Just v) = pure v
-
--- simpleCache :: (ArrowApply a, IsMap (map k v), ContainerKey (map k v) ~ k, MapValue (map k v) ~ v) => ProcessA a (Event k) (Event v) -> ProcessA a (Event v) (Event (Maybe v)) -> ProcessA a (Event k, Event (map k v)) (Event v, Event (map k v))
--- simpleCache act update = proc (kEvt, cache) -> do
---   mVal <- mergeEvents >>> evMap (uncurry lookup) >>> hold Nothing -< (kEvt, cache)
---   case mVal of
---     Nothing -> do
---       val <- act -< kEvt
---       ev <- mergeEvents -< (kEvt, val)
---       cache' <- mergeEvents >>> evMap (\(m, (k', v)) -> insertMap k' v m) -< (cache, ev)
---       returnA -< (val, cache')
---   --   Just val -> do
---   --     ev <- mergeEvents -< (kEvt, val)
---   --     cache' <- mergeEvents >>> evMap (\x -> _) -< (ev, cache)
---   --     returnA -< (val, cache')
-
--- simpleCache :: (ArrowApply a, IsMap (map k v), ContainerKey (map k v) ~ k, MapValue (map k v) ~ v) => ProcessA a (Event (Maybe v)) (Event (Maybe v)) -> ProcessA a (Event k) (Event v)
--- simpleCache act = loop (simpleCache_ act)
-
-simpleCache :: (ArrowApply a, IsMap (map k v), ContainerKey (map k v) ~ k, MapValue (map k v) ~ v) => ProcessA a (Event (Either k v)) (Event (Maybe v)) -> ProcessA a (Event k, Event (map k v)) (Event v, Event (map k v))
-simpleCache act = proc (kEvt, cache) -> do
-  cache' <- mergeEvents >>> alterMapWithKeyP act -< (kEvt, cache)
-  cache'' <- evMap snd -< cache'
-  v <- evMap (uncurry lookup) >>? id -< cache'
-  returnA -< (v, cache'')
 
 alterMapA :: (ArrowChoice a, IsMap (map k v), ContainerKey (map k v) ~ k, MapValue (map k v) ~ v) => a (Maybe v) (Maybe v) -> k -> a (map k v) (map k v)
 alterMapA f k = proc map -> do
@@ -144,3 +122,11 @@ infixr 1 >>?
     Just (Right v) -> catB >>> returnA -< v <$ input
 
 infixr 5 >>|
+
+onEnd' :: ArrowApply a => ProcessA a (Event b) (Event b)
+onEnd' = proc input -> do
+  ended <- onEnd -< input
+  res <- evMap Just >>> hold Nothing -< input
+  case res of
+    Nothing -> returnA -< noEvent
+    Just r -> returnA -< r <$ ended

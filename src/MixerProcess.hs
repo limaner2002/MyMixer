@@ -121,13 +121,13 @@ cdfp :: (Element c ~ (t1, t), ArrowApply a, IsSequence c, Num t1) =>
 cdfp = anytime cdfa
 
 searchTracks
-  :: (MonadResource m, MonadThrow e) => Manager -> ProcessA (Kleisli m) (Event Track) (Event (e (Track, TrackSearch [] Track)))
-searchTracks mgr = proc trackEvt -> do
+  :: (MonadResource m, MonadThrow e) => Manager -> ByteString -> ProcessA (Kleisli m) (Event Track) (Event (e (Track, TrackSearch [] Track)))
+searchTracks mgr authToken = proc trackEvt -> do
   mTrack <- evMap Just >>> hold Nothing -< trackEvt
   case mTrack of
     Nothing -> returnA -< noEvent
     Just track -> do
-      searchResultBS <- machine searchRequest >>> evMap (\req -> (req, mgr)) >>> sourceHttp -< trackEvt
+      searchResultBS <- machine (searchRequest authToken) >>> evMap (\req -> (req, mgr)) >>> sourceHttp -< trackEvt
       searchResult <- machineParser json >>> evMap (join . fmap fromJSON') >>> evMap (fmap asTrackSearch) -< searchResultBS
       returnA -< fmap (\result -> (,) <$> pure track <*> result) searchResult -- (track, searchResult)
 
@@ -138,12 +138,12 @@ data SampledTrack a = SampledTrack
   } deriving Show
 
 createMix :: (MonadResource m, MonadThrow e) =>
-             Manager -> Int -> Int
+             Manager -> ByteString -> Int -> Int
           -> ProcessA
           (Kleisli (ReaderT E.SqlBackend m))
-          (Event (Float, WeightMap Float (Key Station)))
+          (Event (WeightKey, WeightMap WeightKey (Key Station)))
           (Event (e (SampledTrack Unconfirmed)))
-createMix mgr nStations nTracks = proc input -> do
+createMix mgr authToken nStations nTracks = proc input -> do
   -- storedTrack <- anytime (sampleItem nStations) >>> blockingSource' >>> getTrackForStation >>> evMap (\(StationTracks_ _ ts) -> fmap extractIt ts) >>> cdfp >>> evMap mapFromList >>> anytime (sampleItem nTracks) >>> blockingSource' -< input
   -- sampledStation <- anytime (sampleItem nStations) >>> blockingSource' -< input
   sampledStation <- weightedSamplesRemove nStations >>> evMap (fmap snd) -< input
@@ -161,7 +161,7 @@ createMix mgr nStations nTracks = proc input -> do
             Just _ -> evMap pure -< SampledTrack station k (Cached track) <$ sampledTrack
             Nothing -> do
               -- result <- searchTracks mgr >>> evMap (fmap $ uncurry getClosestMatch)) -< track <$ input
-              result <- searchTracks mgr >>> evMap (fmap $ uncurry getClosestMatch) -< track <$ sampledTrack
+              result <- searchTracks mgr authToken >>> evMap (fmap $ uncurry getClosestMatch) -< track <$ sampledTrack
               -- searchResult <- mergeEvents >>> evMap (fmap $ uncurry handleResult) -< (track <$ storedTrack, result)
               searchResult <- evMap (fmap $ uncurry handleResult) -< fmap (\r -> (,) <$> pure track <*> r) result
               -- output <- mergeEvents >>> evMap (\(k, res) -> (,) <$> pure k <*> res) -< (k, result)
@@ -176,10 +176,14 @@ createMix mgr nStations nTracks = proc input -> do
 
 searchBaseURL = "https://api.spotify.com/v1/search?q="
 
-searchRequest :: MonadThrow m => Track -> m Request
-searchRequest (Track artist name _ _) = parseRequest $ unpack $ searchBaseURL <> "artist:" <> urlEncode artist <> "+track:" <> urlEncode name <> "&type=track"
+searchRequest :: MonadThrow m => ByteString -> Track -> m Request
+searchRequest authToken (Track artist name _ _) =
+      addRequestHeader "Authorization" ("Bearer " <> authToken)
+  <$> (parseRequest $ unpack $ searchBaseURL <> "artist:" <> urlEncode artist <> "+track:" <> urlEncode name <> "&type=track")
+
   where
     urlEncode = decodeUtf8 . HT.urlEncode False . encodeUtf8
+    addRequestHeader headerName val req = req { requestHeaders = (headerName, val) : requestHeaders req }
 
 asTrackSearch :: TrackSearch [] Track -> TrackSearch [] Track
 asTrackSearch = id
@@ -212,15 +216,18 @@ toStationTuple (StationWeight _ (Prob p) (StationID id)) = (p, StationKey id)
                                                            -- Very similar to createTrackMap
 toStationCDF :: ArrowApply a =>
      ProcessA
-       a (Event [StationWeight]) (Event (Float, WeightMap Float (Key Station)))
-toStationCDF = evMap (fmap toStationTuple) >>> cdfp >>> evMap (fromMaybe 0 . lastMay . fmap fst) &&& evMap mapFromList >>> mergeEvents
+       a (Event [StationWeight]) (Event (WeightKey, WeightMap WeightKey (Key Station)))
+toStationCDF = evMap (fmap toStationTuple) >>> mkWeightKey >>> cdfp >>> evMap (drop 1) >>> evMap (fromMaybe zeroWeight . lastMay . fmap fst) &&& evMap mapFromList >>> mergeEventsR
+  where
+    mkWeightKey = evMap (fmap (\(p, s) -> (WeightKey p p, s)))
+    zeroWeight = WeightKey 0 0
 
 toStationCDF' :: MonadIO m =>
                  ProcessA
                  (Kleisli m)
                  (Event [StationWeight])
                  (Event (Float, WeightMap Float (Key Station)))
-toStationCDF' = evMap (fmap toStationTuple) >>> cdfp >>> evMap (maximumEx . fmap fst) &&& evMap mapFromList >>> mergeEvents
+toStationCDF' = evMap (fmap toStationTuple) >>> cdfp >>> evMap (maximumEx . fmap fst) &&& evMap mapFromList >>> mergeEventsR
 
 getClosestMatch :: Track -> TrackSearch [] Track -> Maybe (FoundTrack, Int)
 getClosestMatch target (TrackSearch (PagingObject l)) = go
@@ -255,27 +262,11 @@ data SearchResult a
 type TrackWeights = (Int, WeightMap Int (Key Track, Track))
 type StationWeights = (Float, WeightMap Int (Key Station))
 
-cacheStation :: MonadIO m =>
-     ProcessA
-       (Kleisli (ReaderT E.SqlBackend m))
-       (Event (Key Station), Event (Map (Key Station) TrackWeights))
-       (Event TrackWeights, Event (Map (Key Station) TrackWeights))
-cacheStation = simpleCache ((getTrackForStation >>> createTrackMap) >>| id >>> evMap Just)
-
                -- Very similar to toStationCDF
 createTrackMap :: ArrowApply a => ProcessA a (Event StationTracks) (Event TrackWeights)
-createTrackMap = evMap (\(StationTracks_ _ ts) -> fmap extractIt ts) >>> cdfp >>> evMap (fromMaybe 0 . lastMay . fmap fst) &&& evMap mapFromList >>> mergeEvents
+createTrackMap = evMap (\(StationTracks_ _ ts) -> fmap extractIt ts) >>> cdfp >>> evMap (fromMaybe 0 . lastMay . fmap fst) &&& evMap mapFromList >>> mergeEventsR
 
--- sampleTracks :: ArrowApply a => ProcessA a (Event TrackWeights, Event TrackWeights) (Event Track, Event TrackWeights)
--- sampleTracks = proc (input, feedback) -> do
-  
--- decrementSeen :: Arrow cat => cat (Int, Track) (Maybe (Int, Track))
--- decrementSeen = arr dec
---   where
---     dec (0, _) = Nothing
---     dec (n, track) = Just (n - 1, track)
-
-                 -- This needs to take in the station key as well in order to properly decrement the counter.
+               -- This needs to take in the station key as well in order to properly decrement the counter.
 decrementSeen :: MonadIO m => SampledTrack Confirmed -> E.SqlPersistT m ()
 decrementSeen SampledTrack {trackKey = trackKey, stationKey = stationKey} = do
   liftIO $ putStrLn "Decrementing seen counter."
@@ -299,16 +290,6 @@ updateURI_ trackKey uri = do
     E.set track [TrackUri E.=. E.val (Just uri)]
     E.where_ ( track ^. TrackId E.==. (E.val trackKey))
 
--- runIt = runSqlite "/Users/josh/Google Drive/MyMixer/newDB.sqlite" $ runKleisli (run_ $ anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2 >>> machine print) ["/Users/josh/workspace/MyMixer/stationWeights/stationWeights.cfg"]
--- runIt = runSqlite "/Users/josh/Google Drive/MyMixer/newDB.sqlite" $ runKleisli (run_ $ anytime setStationWeights >>> toStationCDF' >>> weightedSamplesRemove 5 >>> anytime (Kleisli asMonadThrow) >>> getTrackForStation >>> evMap (\(StationTracks_ _ ts) -> fmap extractIt ts) >>> cdfp >>> evMap (maximumEx . fmap fst) &&& (evMap mapFromList >>> evMap asWM) >>> mergeEvents >>> weightedSamplesRemove 2 >>> anytime (Kleisli asMonadThrow) >>> machine print) ["/Users/josh/workspace/MyMixer/stationWeights/stationWeights.cfg"]
--- runIt = runSqlite "/Users/josh/Google Drive/MyMixer/newDB.sqlite" $ runKleisli (run_ $ anytime setStationWeights >>> toStationCDF' >>> weightedSamplesRemove 5 >>> anytime (Kleisli asMonadThrow) >>> getTrackForStation >>> machine print) ["/Users/josh/workspace/MyMixer/stationWeights/stationWeights.cfg"]
-
-              -- With caching
--- runIt = runSqlite "/Users/josh/Google Drive/MyMixer/newDB.sqlite" $ runKleisli (run_ $ anytime setStationWeights >>> toStationCDF' >>> weightedSamplesRemove 5 >>> anytime (Kleisli asMonadThrow) >>> cacheTracks >>> evMap (\(StationTracks_ _ ts) -> fmap extractIt ts) >>> cdfp >>> evMap (maximumEx . fmap fst) &&& (evMap mapFromList >>> evMap asWM) >>> mergeEvents >>> weightedSamplesRemove 2 >>> anytime (Kleisli asMonadThrow) >>> machine print) ["/Users/josh/workspace/MyMixer/stationWeights/stationWeights.cfg"]
-
--- let asWM = id :: WeightMap Int Track -> WeightMap Int Track
--- runSqlite "/tmp/newDB.sqlite" $ runKleisli (run_ $ anytime setStationWeights >>> toStationCDF' >>> weightedSamplesRemove 5 >>? loop cacheTracks >>> evMap (\(StationTracks_ _ ts) -> fmap extractIt ts) >>> cdfp >>> evMap (fromMaybe 0 . lastMay . fmap fst) &&& (evMap mapFromList >>> evMap asWM) >>> mergeEvents >>> weightedSamplesRemove 2 >>? machine print) $ take 2 $ repeat "/Users/josh/workspace/MyMixer/stationWeights/stationWeights.cfg"
-
 t :: Track
 t = Track {trackArtist = "The Commodores", trackSong = "Sweet Love", trackAlbum = Just "All The Great Love Songs (1976)", trackUri = Nothing}
 
@@ -318,7 +299,6 @@ asTrackWeight = id
 asStationWeight :: WeightMap Int (Key Station) -> WeightMap Int (Key Station)
 asStationWeight = id
 
--- let updateIt = machine (mapM decrementSeen) &&& (evMap (fmap searchResult) >>> machine (mapM (liftIO . userInput)) >>> evMap (fmap resultURI) >>> machine print >>| (id >>? evMap (<> "\n") >>> sinkFile "/tmp/result.txt")) >>> tee
 updateIt
   :: MonadResource m => FilePath -> ProcessA (Kleisli (ReaderT E.SqlBackend m)) (Event (Either SomeException (SampledTrack Unconfirmed))) (Event Int)
 updateIt sinkFP = proc input -> do
@@ -331,27 +311,6 @@ updateIt sinkFP = proc input -> do
 
   count <- evMap (+) >>> accum 0 -< 1 <$ evt
   returnA -< count <$ evt
-
--- getN :: MonadResource m => TChan Text -> Manager -> Int -> ProcessA (Kleisli (ReaderT E.SqlBackend m)) (Event FilePath) (Event Int)
--- getN chan mgr nDesired = go
---   where
---     go = proc input -> do
---       res <- id -< fmap (\fp -> (nDesired, fp)) input
---       loop -< res
---     loop = proc input -> do
---       fp <- evMap snd -< input
---       nFound <- evMap (\x -> trace "Creating mix" x) >>> mixIt -< fp
---       n <- evMap fst -< input
-
---       newN <- mergeEvents >>> evMap (uncurry (-)) -< (n, nFound)
---       traceN <- hold 0 -< n
---       mContinue <- evMap (> 0) >>> evMap Just >>> hold Nothing -< newN
---       case mContinue of
---         Nothing -> returnA -< noEvent
---         Just False -> returnA -< newN
---         Just True -> mergeEvents >>> loop -< (newN, fp)
-
---     mixIt = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2 >>> updateIt chan
 
 resultURI :: SearchResult Confirmed -> Maybe Text
 resultURI (Cached t) = trackUri t
@@ -407,10 +366,10 @@ yesOrNo f g = do
     "N" -> No <$> g
     _   -> putStrLn "I don't understand that answer. Please enter only Y/N" >> yesOrNo f g
 
-runIt :: Text -> FilePath -> Int -> IO ()
-runIt dbPath weightPath n = do
+runIt :: Text -> FilePath -> Int -> ByteString -> IO ()
+runIt dbPath weightPath n authToken = do
   -- chan <- newTChanIO
   mgr <- newManager tlsManagerSettings
   runSqlite dbPath $ runKleisli (run_ $ mixIt mgr >>> updateIt "/tmp/result.txt" >>> machine print) $ take n $ repeat weightPath
  where
-   mixIt mgr = anytime setStationWeights >>> toStationCDF >>> createMix mgr 5 2
+   mixIt mgr = anytime setStationWeights >>> toStationCDF >>> createMix mgr authToken 5 2
