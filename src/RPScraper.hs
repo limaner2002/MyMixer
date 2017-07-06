@@ -1,49 +1,48 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module RPScraper where
 
-import Prelude ()
 import ClassyPrelude
 
-import Text.XML.HXT.Arrow.ReadDocument
-import Text.XML.HXT.Arrow.XmlArrow
-import Text.XML.HXT.Core
 import Control.Arrow
-import Database.Persist.Sqlite (runSqlite)
--- import Transient.Base
-import Text.XML.HXT.HTTP
-import Data.List.Split
+import Database.Persist.Sqlite (runSqlite, SqlBackend)
 import qualified Streaming.Prelude as S
+import Text.Taggy.Lens
+import Control.Lens hiding (children)
+import Data.List.Split (chunksOf)
+import qualified Data.Text.Lazy as TL
+import Data.ByteString.Streaming.HTTP hiding (withHTTP)
 
 import Core
 
--- rpScraper :: TransIO ()
--- rpScraper = do
---   tracks <- liftIO $ getTracks getRowText
---   liftIO $ runSqlite dbLocation $ mapM_ (\x -> addToDB x (StationKey 1000)) tracks
---   putStrLn $ "Scraped " <> tshow (length tracks) <> " tracks from \"Radio Paradise.\""
+rpScraper :: (MonadBaseControl IO m, MonadIO m) => Text -> m ()
+rpScraper dbLocation = runSqlite dbLocation rpScraper'
 
-rpScraper :: MonadIO m => Text -> m ()
-rpScraper dbLocation = do
-  tracks <- liftIO $ getTracks getRowText
-  runSqlite dbLocation $ S.each >>> S.mapM_ (\x -> addToDB x (StationKey 1000)) $ tracks
+rpScraper' :: (MonadIO m, MonadBaseControl IO m) => ReaderT SqlBackend m ()
+rpScraper' = do
+  tracks <- liftIO $ getTrackInfo
+  makeTracks >>> S.each >>> S.concat >>> addTracks $ tracks
 
-createTrack :: [Text] -> Track
-createTrack [artist, name, album] = Track artist name (Just album) Nothing
-createTrack l = error "Incorrect input"
+addTracks :: MonadIO m =>
+     S.Stream (S.Of Track) (ReaderT SqlBackend m) r
+     -> ReaderT SqlBackend m r
+addTracks = S.mapM_ (flip addToDB (StationKey 1000))
 
-createTracks = fmap createTrack . chunksOf 3 . fmap pack
+createTrack :: [Text] -> Either String Track
+createTrack [artist, name, album] = Right $ Track artist name (Just album) Nothing
+createTrack l = Left "Incorrect input"
 
-getRows =
-  (readDocument [withValidate no, withParseHTML yes, withHTTP mempty, withWarnings no] rpURL //> hasName "table")
-  >>. (take 1 . drop 3)
-  /> hasName "tr"
-
-getTracks f =
-  runX $ getRows
-        >>. (fmap createTrack . filter (\l -> length l == 3) . fmap (fmap pack . getRowText))
-
-getRowText = runLA $ getChildren >>> hasName "td" /> hasName "a" /> getText
+createTracks = fmap createTrack . chunksOf 3
 
 rpURL = "http://www.radioparadise.com/rp2-content.php?name=Playlist&more=true"
--- rpURL = "/tmp/rp.html"
+
+getTrackInfo :: IO TL.Text
+getTrackInfo = decodeUtf8 . responseBody <$> (join $ httpLbs <$> parseRequest rpURL <*> newManager tlsManagerSettings)
+
+parseTrackInfo :: TL.Text -> [[Text]]
+parseTrackInfo x = chunksOf 4 $ x ^.. html . taking 1 (dropping 7 $ allNamed (only "table")) . allNamed (only "a") . children . folded . runFold (Fold content <|> Fold contents)
+
+makeTracks :: TL.Text -> [Either String Track]
+makeTracks = parseTrackInfo >>> fmap (take 3) >>> fmap createTrack
