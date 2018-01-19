@@ -2,35 +2,41 @@
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
 # There seems to be some issue with the sqlite version in lts-8.5
-resolver: lts-8.0
+resolver: lts-9.6
 
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-# - location:
-#     git: https://github.com/limaner2002/machinecell-contrib.git
-#     commit: d3f1ed6df2291a6b379f743ec7072ec93c343530
-#   extra-dep: true
-- location: ../machinecell-contrib
+- location: ../project-m36/
   extra-dep: true
-- location: ../machinecell
-  extra-dep: true
-# - location:
-#     git: https://github.com/as-capabl/machinecell.git
-#     commit: dc436783f6e1cfe3a088e818dc94f503e1c5e709
 - location:
-    git: https://github.com/limaner2002/hs-config.git
-    commit: 640c840b13f8caa5155117bfc2134ced70bf4afe
+    git: https://github.com/alpmestan/taggy.git
+    commit: 5456c2fa4d377f7802ec5df3d5f50c4ccab2e8ed
   extra-dep: true
+- location:
+    git: https://github.com/alpmestan/taggy-lens.git
+    commit: bb75047ced2b67cddab33fa30b40b14192d35881
+  extra-dep: true
+- location:
+    git: https://github.com/limaner2002/servant.git
+    commit: a102ded98f33fde554bb15a4378822f543ae76b0
+  extra-dep: true
+  subdirs:
+  - servant-client
+  - servant-client-core
+  - servant
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
-- arrows-0.4.4.1
-- Stream-0.4.7.2
-- lazysmallcheck-0.6
-- esqueleto-2.5.1
-- random-extras-0.19
-- concurrent-extra-0.7.0.10
+- data-interval-1.3.0
+- distributed-process-0.6.6
+- distributed-process-async-0.2.4.1
+- distributed-process-client-server-0.2.3
+- distributed-process-extras-0.3.2
+- extended-reals-0.2.2.0
+- syb-0.6
+# - taggy-lens-0.1.2
+# - taggy-0.2.0
 
 # Override default flag values for local packages and extra-deps
 flags: {}

@@ -15,69 +15,39 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src/
-  exposed-modules:     Spotify
-                       MixerProcess
-                       Server
-                       Opts
-  other-modules:       Core
-                     , Util
-                     , WeightedMap
-                     , MCScraper
-                     , RPScraper
-                     , WeightedShuffle
-                     , Concurrent.Streaming
-                     , OAuth
+  exposed-modules:     Internal.Types
+                     , Internal.Database
+                     , Internal.Newtypes
+                     , ITunes
+                     , Spotify
+                     , ScrapeITunes
+  other-modules:       
   build-depends:       base
                      , classy-prelude
                      , aeson
-                     , resourcet
-                     , transformers-base
-                     , monad-control
-                     , persistent-template
-                     , persistent
-                     , persistent-sqlite
-                     , esqueleto
-                     , random-fu
-                     , random-source
-                     , random-extras
-                     , http-conduit
-                     , machinecell-contrib
-                     , hs-config
-                     , wai-app-static
-                     , wai
-                     , warp
-                     , http-types
-                     , HTTP
-                     , base64-bytestring
-                     , open-browser
-                     , array
-                     , chunked-data
+                     , binary
+                     , project-m36
+                     , lens
+                     , lens-aeson
+                     , taggy-lens
+                     , servant
+                     , servant-client
+                     , cryptonite
+                     , jose
                      , http-client
                      , http-client-tls
-                     , concurrent-extra
-                     , optparse-applicative
-                     , streaming
-                     , time-lens
-                     , lens
-                     , time
-                     , streaming-bytestring
-                     , streaming-utils
-                     , taggy-lens
-                     , split
-                     , text
   default-language:    Haskell2010
 
-executable spotify
-  hs-source-dirs:      app/
-  main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2
-  extensions:          OverloadedStrings
-  build-depends:       spotify
-                     , base
-                     , classy-prelude
-                     , machinecell-contrib
-                     , optparse-applicative
-  default-language:    Haskell2010
+-- executable spotify
+--   hs-source-dirs:      app/
+--   main-is:             Main.hs
+--   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2
+--   extensions:          OverloadedStrings
+--   build-depends:       spotify
+--                      , base
+--                      , classy-prelude
+--                      , optparse-applicative
+--   default-language:    Haskell2010
 
 source-repository head
   type:     git
