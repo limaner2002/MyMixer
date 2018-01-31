@@ -12,6 +12,7 @@ import Data.Aeson
 import Data.Aeson.Lens
 import Control.Lens
 import Servant.Client
+import ScrapeCommon
 
 readPlaylist :: FilePath -> IO (Result [ITunesTrack])
 readPlaylist fp = do

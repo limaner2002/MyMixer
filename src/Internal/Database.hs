@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Internal.Database where
 
@@ -13,8 +14,20 @@ import ProjectM36.Client hiding (close, withTransaction)
 import ProjectM36.Tupleable
 import ProjectM36.Relation
 import ProjectM36.Key
+import ProjectM36.Base
 import Data.Proxy
 import Internal.Types
+import Control.Monad.Trans.Compose
+import Control.Monad.Except
+
+infixr 9 :.:
+type (:.:) = ComposeT
+
+newtype DatabaseET err (m :: * -> *) a = DatabaseET { runDatabaseET :: (ExceptT err :.: DatabaseT) m a }
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
+
+mkDatabaseET :: DatabaseT m (Either err a) -> DatabaseET err m a
+mkDatabaseET = DatabaseET . ComposeT . ExceptT
 
 newtype DatabaseT (m :: * -> *) a = DatabaseT { runDatabaseT_ :: ReaderT DbConn m a }
   deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
@@ -24,6 +37,9 @@ mkDatabaseT = DatabaseT . ReaderT
 
 runDatabaseT :: DatabaseT m a -> DbConn -> m a
 runDatabaseT = runReaderT . runDatabaseT_
+
+runDatabaseETIO :: DatabaseET DbError IO a -> IO (Either DbError a)
+runDatabaseETIO = fmap ClassyPrelude.join . runDatabaseTIO . runExceptT . getComposeT . runDatabaseET
 
 runDatabaseTIO :: DatabaseT IO a -> IO (Either DbError a)
 runDatabaseTIO f = bracket connect disconnect runF
@@ -60,9 +76,17 @@ insertStation station = insert [station] "station"
 insertTrackStations :: (MonadDatabase m, MonadIO m) => TrackStations -> m ()
 insertTrackStations trackStations = insert [trackStations] "track_stations"
 
-retrieve :: (MonadDatabase m, MonadIO m, Tupleable a) => RelationalExprBase () -> m (Either DbError [Either RelationalError a])
-retrieve rel = do
-  eRes <- runTransaction $ query $ rel -- RelationVariable relVarName ()
+retrieveE :: (Tupleable a, MonadIO m, HasTransaction m) => RelationalExprBase () -> DatabaseET DbError m [Either RelationalError a]
+retrieveE = mkDatabaseET . retrieveAll
+
+-- retrieveAll :: (MonadDatabase m, MonadIO m, Tupleable a)
+--   => RelationalExprBase () -> m (Either DbError [Either RelationalError a])
+-- retrieveAll = retrieve_ (liftIO $ ProjectM36.Relation.toList)
+
+retrieveAll :: (MonadDatabase m, MonadIO m, Tupleable a)
+  => RelationalExprBase () -> m (Either DbError [Either RelationalError a])
+retrieveAll rel = do
+  eRes <- runTransaction $ query $ rel
   case eRes of
     Left exc -> return $ Left exc
     Right res -> do
@@ -70,22 +94,13 @@ retrieve rel = do
       return $ Right $ fmap fromTuple tuples
 
 retrieveTrack :: (MonadDatabase m, MonadIO m) => m (Either DbError [Either RelationalError Track])
-retrieveTrack = retrieve $ RelationVariable "track" ()
+retrieveTrack = retrieveAll $ RelationVariable "track" ()
 
 retrieveTrackStations :: (MonadDatabase m, MonadIO m) => m (Either DbError [Either RelationalError TrackStations])
-retrieveTrackStations = retrieve $ RelationVariable "track_stations" ()
+retrieveTrackStations = retrieveAll $ RelationVariable "track_stations" ()
 
 retrieveStation :: (MonadDatabase m, MonadIO m) => m (Either DbError [Either RelationalError Station])
-retrieveStation = retrieve $ RelationVariable "track_stations" ()
-
--- retrieveTracksForStation :: (MonadDatabase m, MonadIO m) => StationId -> m (Either DbError [Either RelationalError Track])
--- retrieveTracksForStation
-
--- dbFun :: (MonadDatabase m, MonadIO m) => Track -> m ()
--- dbFun track = do
---   createSchema
---   insertTrack track
---   retrieveTrack
+retrieveStation = retrieveAll $ RelationVariable "track_stations" ()
 
 createSchema :: (MonadDatabase m, MonadIO m) => m ()
 createSchema = do

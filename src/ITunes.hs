@@ -15,8 +15,6 @@ import Servant.Client
 import Servant.API
 import Crypto.PubKey.ECC.P256
 import Data.Proxy
-import qualified Network.HTTP.Client as C
-import qualified Network.HTTP.Client.TLS as TLS
 import Control.Lens hiding ((.=))
 import Data.Aeson.Types
 
@@ -126,7 +124,10 @@ data DevToken = DevToken
   } deriving Show
 
 newtype PlaylistId = PlaylistId Text
-  deriving (Show, ToHttpApiData)
+  deriving (Show, ToHttpApiData, Generic)
+
+instance FromJSON PlaylistId where
+  parseJSON = genericParseJSON (defaultOptions { sumEncoding = UntaggedValue} )
 
 newtype JWT = JWT Text
   deriving Show
@@ -134,6 +135,16 @@ newtype JWT = JWT Text
 instance ToHttpApiData JWT where
   toHeader (JWT tok) = "Bearer " <> encodeUtf8 tok
   toUrlPiece (JWT tok) = toUrlPiece tok
+
+data SourcePlaylist = SourcePlaylist
+  { _srcName :: Text
+  , _srcId :: PlaylistId
+  } deriving (Show, Generic)
+
+instance FromJSON SourcePlaylist where
+  parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_src", sumEncoding = UntaggedValue } )
+
+makeLenses ''SourcePlaylist
 
 playlists :: [PlaylistId] -> JWT -> ClientM (ResponseRoot ITunesPlaylist)
 playlists ids jwt = client (Proxy :: Proxy Playlists) ids (Just jwt)
@@ -143,31 +154,6 @@ playlists ids jwt = client (Proxy :: Proxy Playlists) ids (Just jwt)
 
 playlist :: PlaylistId -> JWT -> ClientM (ResponseRoot ITunesTrack)
 playlist id jwt = client (Proxy :: Proxy Playlist) id (Just jwt)
-
-newtype HostUrl = HostUrl String
-  deriving (Show, Eq, IsString)
-
-clientEnv (HostUrl url) = do
-  mgr <- C.newManager TLS.tlsManagerSettings
-  return $ ClientEnv mgr (BaseUrl Https url 443 "")
-
-clientEnvDbgWith :: (C.Request -> IO C.Request) -> HostUrl -> IO ClientEnv
-clientEnvDbgWith f (HostUrl url) = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https url 443 "")
-    where
-      reqLoggerFunc req = f req
-      settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
-                                        , C.managerModifyResponse = respLoggerFunc
-                                        }
-      respLoggerFunc resp = do
-        print (C.responseStatus resp)
-        print (C.responseHeaders resp)
-        print (C.responseCookieJar resp)
-        return resp
-
-clientEnvDbg :: HostUrl -> IO ClientEnv
-clientEnvDbg = clientEnvDbgWith (\req -> print req >> return req)
 
 makeLenses ''ITunesTrack
 makeLenses ''Resource
