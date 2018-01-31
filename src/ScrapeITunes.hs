@@ -20,8 +20,6 @@ readPlaylist fp = do
     pure $ sequence $ x ^.. _JSON . asValue . key "data" . plate . key "relationships" . key "tracks" . key "data" . plate . key "attributes" . to fromJSON
 
 insertITunesTracks :: (MonadDatabase m, MonadIO m) => [ITunesTrack] -> m ()
--- insertITunesTracks (Error error) = putStrLn $ pack error
--- insertITunesTracks (Success iTunesTracks) = insert tracks' "track"
 insertITunesTracks iTunesTracks = insert tracks' "track"
    where
        tracks = iTunesTracks ^.. traverse . unITunes

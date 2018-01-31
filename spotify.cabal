@@ -36,6 +36,7 @@ library
                      , jose
                      , http-client
                      , http-client-tls
+                     , QuickCheck
   default-language:    Haskell2010
 
 -- executable spotify

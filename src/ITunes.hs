@@ -19,9 +19,9 @@ import qualified Network.HTTP.Client as C
 import qualified Network.HTTP.Client.TLS as TLS
 import Control.Lens hiding ((.=))
 import Data.Aeson.Types
+import Test.QuickCheck
 
 type Playlists = "v1" :> "catalog" :> "us" :> "playlists" :> QueryParams "ids" PlaylistId :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesPlaylist)
--- type Playlist = "v1" :> "catalog" :> "us" :> "playlists" :> Capture "id" PlaylistId :> "tracks" :> QueryParam "offset" Offset :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesTrack)
 type Playlist = "v1" :> "catalog" :> "us" :> "playlists" :> Capture "id" PlaylistId :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesTrack)
 
 data ResponseRoot a
@@ -70,6 +70,14 @@ instance FromJSON ITunesTrack where
          <*> pure Nothing
         )
 
+instance ToJSON ITunesTrack where
+  toJSON (ITunesTrack track) = object
+    [ "artistName" .= (track ^. artist)
+    , "name" .= (track ^. song)
+    , "albumName" .= (track ^. album)
+    , "isrc" .= (track ^. isrc)
+    ]
+
 data ITunesPlaylist = ITunesPlaylist
      { _plTracks :: TracksData
      , _plOffset :: Maybe Offset
@@ -94,6 +102,9 @@ data TracksDataAttr = TracksDataAttr
 
 instance FromJSON TracksDataAttr where
     parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_trd" } )
+
+instance ToJSON TracksDataAttr where
+  toEncoding = genericToEncoding ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_trd" } )
 
 newtype Offset = Offset Int
   deriving Show
@@ -126,7 +137,10 @@ data DevToken = DevToken
   } deriving Show
 
 newtype PlaylistId = PlaylistId Text
-  deriving (Show, ToHttpApiData)
+  deriving (Show, ToHttpApiData, Generic, Eq, IsString)
+
+instance ToJSON PlaylistId
+instance FromJSON PlaylistId
 
 newtype JWT = JWT Text
   deriving Show
@@ -134,6 +148,22 @@ newtype JWT = JWT Text
 instance ToHttpApiData JWT where
   toHeader (JWT tok) = "Bearer " <> encodeUtf8 tok
   toUrlPiece (JWT tok) = toUrlPiece tok
+
+data ITunesSourcePlaylist = ITunesSourcePlaylist
+  { _sourceName :: Text
+  , _sourceId :: PlaylistId
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON ITunesSourcePlaylist where
+  toEncoding = genericToEncoding ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_source" } )
+
+instance FromJSON ITunesSourcePlaylist where
+  parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_source" } )
+
+-- instance Arbitrary ITunesSourcePlaylist where
+--   arbitrary = ITunesSourcePlaylist
+--     <$> arbitrary
+--     <*> arbitrary
 
 playlists :: [PlaylistId] -> JWT -> ClientM (ResponseRoot ITunesPlaylist)
 playlists ids jwt = client (Proxy :: Proxy Playlists) ids (Just jwt)

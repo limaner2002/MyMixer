@@ -51,10 +51,19 @@ instance Atomable StationName
 instance Atomable SeenCount
 instance Atomable Isrc
 
+instance ToJSON ArtistName
 instance FromJSON ArtistName
+
+instance ToJSON SongName
 instance FromJSON SongName
+
+instance ToJSON AlbumName
 instance FromJSON AlbumName
+
+instance ToJSON TrackId
 instance FromJSON TrackId
+
+instance ToJSON Isrc
 instance FromJSON Isrc
 
 makeLenses ''Track
