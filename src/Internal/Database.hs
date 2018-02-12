@@ -79,18 +79,20 @@ insertTrackStations trackStations = insert [trackStations] "track_stations"
 retrieveE :: (Tupleable a, MonadIO m, HasTransaction m) => RelationalExprBase () -> DatabaseET DbError m [Either RelationalError a]
 retrieveE = mkDatabaseET . retrieveAll
 
--- retrieveAll :: (MonadDatabase m, MonadIO m, Tupleable a)
---   => RelationalExprBase () -> m (Either DbError [Either RelationalError a])
--- retrieveAll = retrieve_ (liftIO $ ProjectM36.Relation.toList)
+retrieveAll :: (MonadDatabase m, Tupleable a)
+   => RelationalExprBase () -> m (Either DbError [Either RelationalError a])
+retrieveAll = retrieveAll_
 
-retrieveAll :: (MonadDatabase m, MonadIO m, Tupleable a)
-  => RelationalExprBase () -> m (Either DbError [Either RelationalError a])
-retrieveAll rel = do
+retrieveAll_ :: (Element (f RelationTuple) ~ RelationTuple, MonadDatabase m,
+                 SemiSequence (f RelationTuple), Monoid (f RelationTuple),
+                 Tupleable a, Functor f) =>
+                RelationalExpr -> m (Either DbError (f (Either RelationalError a)))
+retrieveAll_ rel = do
   eRes <- runTransaction $ query $ rel
   case eRes of
     Left exc -> return $ Left exc
     Right res -> do
-      tuples <- liftIO $ ProjectM36.Relation.toList res
+      let tuples = relFold cons mempty res
       return $ Right $ fmap fromTuple tuples
 
 retrieveTrack :: (MonadDatabase m, MonadIO m) => m (Either DbError [Either RelationalError Track])
