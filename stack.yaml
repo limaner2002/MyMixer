@@ -2,7 +2,7 @@
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
 # There seems to be some issue with the sqlite version in lts-8.5
-resolver: lts-9.6
+resolver: lts-9.21
 
 # Local packages, usually specified by relative directory name
 packages:
@@ -17,14 +17,14 @@ packages:
     git: https://github.com/alpmestan/taggy-lens.git
     commit: bb75047ced2b67cddab33fa30b40b14192d35881
   extra-dep: true
-- location:
-    git: https://github.com/limaner2002/servant.git
-    commit: a102ded98f33fde554bb15a4378822f543ae76b0
-  extra-dep: true
-  subdirs:
-  - servant-client
-  - servant-client-core
-  - servant
+# - location:
+#     git: https://github.com/limaner2002/servant.git
+#     commit: a102ded98f33fde554bb15a4378822f543ae76b0
+#   extra-dep: true
+#   subdirs:
+#   - servant-client
+#   - servant-client-core
+#   - servant
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
@@ -35,6 +35,9 @@ extra-deps:
 - distributed-process-extras-0.3.2
 - extended-reals-0.2.2.0
 - syb-0.6
+- servant-0.12
+- servant-client-0.12
+- servant-client-core-0.12
 # - taggy-lens-0.1.2
 # - taggy-0.2.0
 

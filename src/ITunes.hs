@@ -15,14 +15,15 @@ import Servant.Client
 import Servant.API
 import Crypto.PubKey.ECC.P256
 import Data.Proxy
-import qualified Network.HTTP.Client as C
-import qualified Network.HTTP.Client.TLS as TLS
 import Control.Lens hiding ((.=))
 import Data.Aeson.Types
 import Test.QuickCheck
+import GHC.TypeLits
 
 type Playlists = "v1" :> "catalog" :> "us" :> "playlists" :> QueryParams "ids" PlaylistId :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesPlaylist)
-type Playlist = "v1" :> "catalog" :> "us" :> "playlists" :> Capture "id" PlaylistId :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesTrack)
+-- type Playlist = "v1" :> "catalog" :> "us" :> "playlists" :> Capture "id" PlaylistId :> "tracks" :> QueryParam "offset" Offset :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesTrack)
+type Playlist = "v1" :> "catalog" :> "us" :> "playlists" :> Capture "id" PlaylistId :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot ITunesPlaylist)
+-- type Curator a = "v1" :> "catalog" :> "us" :> "apple-curators" :> Capture "id" CuratorId :> Header "Authorization" JWT :> Get '[JSON] (ResponseRoot a)
 
 data ResponseRoot a
     = Data
@@ -81,13 +82,18 @@ instance ToJSON ITunesTrack where
 data ITunesPlaylist = ITunesPlaylist
      { _plTracks :: TracksData
      , _plOffset :: Maybe Offset
-     } deriving (Show, Generic)
+     }
+     | ITunesPlaylistIdentifier
+     { _plId :: PlaylistId
+     , _plHref :: Text
+     }
+       deriving (Show, Generic)
 
 -- instance ToJSON ITunesPlaylist where
 --     toEncoding = genericToEncoding ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_pl" } )
 
 instance FromJSON ITunesPlaylist where
-    parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_pl" } )
+    parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_pl", sumEncoding = UntaggedValue } )
 
 data TracksData = TracksData
      { _trData :: [TracksDataAttr]
@@ -137,10 +143,13 @@ data DevToken = DevToken
   } deriving Show
 
 newtype PlaylistId = PlaylistId Text
-  deriving (Show, ToHttpApiData, Generic, Eq, IsString)
+  deriving (Show, ToHttpApiData, Generic)
 
-instance ToJSON PlaylistId
-instance FromJSON PlaylistId
+instance FromJSON PlaylistId where
+  parseJSON = genericParseJSON (defaultOptions { sumEncoding = UntaggedValue} )
+
+newtype CuratorId = CuratorId Int
+  deriving (Show, Num, Eq, Ord, ToHttpApiData)
 
 newtype JWT = JWT Text
   deriving Show
@@ -149,21 +158,30 @@ instance ToHttpApiData JWT where
   toHeader (JWT tok) = "Bearer " <> encodeUtf8 tok
   toUrlPiece (JWT tok) = toUrlPiece tok
 
-data ITunesSourcePlaylist = ITunesSourcePlaylist
-  { _sourceName :: Text
-  , _sourceId :: PlaylistId
-  } deriving (Show, Eq, Generic)
+data SourcePlaylist = SourcePlaylist
+  { _srcName :: Text
+  , _srcId :: PlaylistId
+  } deriving (Show, Generic)
 
-instance ToJSON ITunesSourcePlaylist where
-  toEncoding = genericToEncoding ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_source" } )
+instance FromJSON SourcePlaylist where
+  parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_src", sumEncoding = UntaggedValue } )
 
-instance FromJSON ITunesSourcePlaylist where
-  parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_source" } )
+newtype Page a = Page [a]
+  deriving (Show, Eq, Semigroup)
 
--- instance Arbitrary ITunesSourcePlaylist where
---   arbitrary = ITunesSourcePlaylist
---     <$> arbitrary
---     <*> arbitrary
+data Curator = Curator
+  { _curName :: Text
+  } deriving (Show, Generic)
+
+instance FromJSON Curator where
+  parseJSON = genericParseJSON ( defaultOptions { fieldLabelModifier = toLower . fromJust . stripPrefix "_cur", sumEncoding = UntaggedValue } )
+
+nextPage :: ClientM b -> Page b -> ClientM (Page b)
+nextPage f page = do
+  b <- f
+  return $ page <> Page [b]
+
+makeLenses ''SourcePlaylist
 
 playlists :: [PlaylistId] -> JWT -> ClientM (ResponseRoot ITunesPlaylist)
 playlists ids jwt = client (Proxy :: Proxy Playlists) ids (Just jwt)
@@ -171,36 +189,17 @@ playlists ids jwt = client (Proxy :: Proxy Playlists) ids (Just jwt)
 -- playlist :: PlaylistId -> Maybe Offset -> JWT -> ClientM (ResponseRoot ITunesTrack)
 -- playlist id offset jwt = client (Proxy :: Proxy Playlist) id offset (Just jwt)
 
-playlist :: PlaylistId -> JWT -> ClientM (ResponseRoot ITunesTrack)
+playlist :: PlaylistId -> JWT -> ClientM (ResponseRoot ITunesPlaylist)
 playlist id jwt = client (Proxy :: Proxy Playlist) id (Just jwt)
 
-newtype HostUrl = HostUrl String
-  deriving (Show, Eq, IsString)
+-- curator :: FromJSON a => CuratorId -> JWT -> ClientM (ResponseRoot a)
+-- curator curatorId jwt = client (Proxy :: Proxy (Curator a)) curatorId (Just jwt)
 
-clientEnv (HostUrl url) = do
-  mgr <- C.newManager TLS.tlsManagerSettings
-  return $ ClientEnv mgr (BaseUrl Https url 443 "")
-
-clientEnvDbgWith :: (C.Request -> IO C.Request) -> HostUrl -> IO ClientEnv
-clientEnvDbgWith f (HostUrl url) = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https url 443 "")
-    where
-      reqLoggerFunc req = f req
-      settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
-                                        , C.managerModifyResponse = respLoggerFunc
-                                        }
-      respLoggerFunc resp = do
-        print (C.responseStatus resp)
-        print (C.responseHeaders resp)
-        print (C.responseCookieJar resp)
-        return resp
-
-clientEnvDbg :: HostUrl -> IO ClientEnv
-clientEnvDbg = clientEnvDbgWith (\req -> print req >> return req)
-
+makePrisms ''ResponseRoot
 makeLenses ''ITunesTrack
 makeLenses ''Resource
 makeLenses ''ITunesPlaylist
 makeLenses ''TracksData
 makeLenses ''TracksDataAttr
+makePrisms ''ITunesPlaylist
+

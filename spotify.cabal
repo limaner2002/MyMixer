@@ -21,6 +21,7 @@ library
                      , ITunes
                      , Spotify
                      , ScrapeITunes
+                     , ScrapeCommon
   other-modules:       
   build-depends:       base
                      , classy-prelude
@@ -37,6 +38,11 @@ library
                      , http-client
                      , http-client-tls
                      , QuickCheck
+                     , mmorph
+                     , mtl
+                     , transformers
+                     , retry
+                     , http-types
   default-language:    Haskell2010
 
 -- executable spotify
