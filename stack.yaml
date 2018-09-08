@@ -2,21 +2,24 @@
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
 # There seems to be some issue with the sqlite version in lts-8.5
-resolver: lts-9.21
+resolver: lts-11.20
 
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-- location: ../project-m36/
-  extra-dep: true
 - location:
-    git: https://github.com/alpmestan/taggy.git
-    commit: 5456c2fa4d377f7802ec5df3d5f50c4ccab2e8ed
-  extra-dep: true
-- location:
-    git: https://github.com/alpmestan/taggy-lens.git
-    commit: bb75047ced2b67cddab33fa30b40b14192d35881
-  extra-dep: true
+      git: https://github.com/limaner2002/project-m36.git
+      commit: b40250bd671346e7f124153292a2a782f0003716
+# - location: ../project-m36/
+#   extra-dep: true
+# - location:
+#     git: https://github.com/alpmestan/taggy.git
+#     commit: 5456c2fa4d377f7802ec5df3d5f50c4ccab2e8ed
+#   extra-dep: true
+# - location:
+#     git: https://github.com/alpmestan/taggy-lens.git
+#     commit: bb75047ced2b67cddab33fa30b40b14192d35881
+#   extra-dep: true
 # - location:
 #     git: https://github.com/limaner2002/servant.git
 #     commit: a102ded98f33fde554bb15a4378822f543ae76b0
@@ -28,18 +31,20 @@ packages:
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
+- taggy-lens-0.1.2
+- project-m36-0.5
 - data-interval-1.3.0
-- distributed-process-0.6.6
-- distributed-process-async-0.2.4.1
-- distributed-process-client-server-0.2.3
-- distributed-process-extras-0.3.2
-- extended-reals-0.2.2.0
-- syb-0.6
-- servant-0.12
-- servant-client-0.12
-- servant-client-core-0.12
-# - taggy-lens-0.1.2
-# - taggy-0.2.0
+- deferred-folds-0.6.12
+- distributed-process-async-0.2.6
+- distributed-process-client-server-0.2.5.1
+- distributed-process-extras-0.3.5
+- extended-reals-0.2.3.0
+- rset-1.0.0
+- stm-containers-1.0.1.1
+- taggy-0.2.1
+- focus-1.0.1.2
+- stm-hamt-1.1.2.1
+- primitive-extras-0.6.7
 
 # Override default flag values for local packages and extra-deps
 flags: {}
@@ -64,3 +69,7 @@ extra-package-dbs: []
 
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+
+nix:
+  enable: true
+  shell-file: stack-shell.nix

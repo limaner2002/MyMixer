@@ -12,14 +12,15 @@ import qualified Network.HTTP.Client.TLS as TLS
 newtype HostUrl = HostUrl String
   deriving (Show, Eq, IsString)
 
+clientEnv :: HostUrl -> IO ClientEnv
 clientEnv (HostUrl url) = do
   mgr <- C.newManager TLS.tlsManagerSettings
-  return $ ClientEnv mgr (BaseUrl Https url 443 "")
+  return $ ClientEnv mgr (BaseUrl Https url 443 "") Nothing
 
 clientEnvDbgWith :: (C.Request -> IO C.Request) -> HostUrl -> IO ClientEnv
 clientEnvDbgWith f (HostUrl url) = do
   mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https url 443 "")
+  return $ ClientEnv mgr (BaseUrl Https url 443 "") Nothing
     where
       reqLoggerFunc req = f req
       settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
